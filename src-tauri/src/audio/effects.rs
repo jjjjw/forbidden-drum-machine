@@ -306,34 +306,44 @@ impl AudioProcessor for DelayLine {
     }
 }
 
-// 8x8 Feedback Delay Network Matrix (Hadamard-based for better energy conservation)
-// Normalized to maintain energy with unit magnitude
-const FDN_MATRIX: [[f32; 8]; 8] = [
-    [
-        0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536,
-    ],
-    [
-        0.3536, -0.3536, 0.3536, -0.3536, 0.3536, -0.3536, 0.3536, -0.3536,
-    ],
-    [
-        0.3536, 0.3536, -0.3536, -0.3536, 0.3536, 0.3536, -0.3536, -0.3536,
-    ],
-    [
-        0.3536, -0.3536, -0.3536, 0.3536, 0.3536, -0.3536, -0.3536, 0.3536,
-    ],
-    [
-        0.3536, 0.3536, 0.3536, 0.3536, -0.3536, -0.3536, -0.3536, -0.3536,
-    ],
-    [
-        0.3536, -0.3536, 0.3536, -0.3536, -0.3536, 0.3536, -0.3536, 0.3536,
-    ],
-    [
-        0.3536, 0.3536, -0.3536, -0.3536, -0.3536, -0.3536, 0.3536, 0.3536,
-    ],
-    [
-        0.3536, -0.3536, -0.3536, 0.3536, -0.3536, 0.3536, 0.3536, -0.3536,
-    ],
-];
+// Fast Hadamard Transform for 8x8 FDN
+// This is more efficient than matrix multiplication
+fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
+    // Stage 1: 8 -> 4 blocks
+    let mut temp = [0.0f32; 8];
+    for i in 0..4 {
+        temp[i] = signals[i] + signals[i + 4];
+        temp[i + 4] = signals[i] - signals[i + 4];
+    }
+    *signals = temp;
+
+    // Stage 2: 4 -> 2 blocks
+    for i in 0..2 {
+        temp[i] = signals[i] + signals[i + 2];
+        temp[i + 2] = signals[i] - signals[i + 2];
+        temp[i + 4] = signals[i + 4] + signals[i + 6];
+        temp[i + 6] = signals[i + 4] - signals[i + 6];
+    }
+    *signals = temp;
+
+    // Stage 3: 2 -> 1 blocks
+    temp[0] = signals[0] + signals[1];
+    temp[1] = signals[0] - signals[1];
+    temp[2] = signals[2] + signals[3];
+    temp[3] = signals[2] - signals[3];
+    temp[4] = signals[4] + signals[5];
+    temp[5] = signals[4] - signals[5];
+    temp[6] = signals[6] + signals[7];
+    temp[7] = signals[6] - signals[7];
+    
+    *signals = temp;
+    
+    // Normalize by 1/sqrt(8) for energy conservation
+    let scale = 1.0 / (8.0f32).sqrt();
+    for i in 0..8 {
+        signals[i] *= scale;
+    }
+}
 
 // Base delay times for FDN to avoid resonances (in seconds)
 // Prime-based times create natural sounding reverb while avoiding modal resonances
@@ -502,13 +512,13 @@ impl StereoAudioProcessor for FDNReverb {
                 .process(self.feedback_highpass[i].process(delay_outputs[i]));
         }
 
-        // Apply FDN feedback matrix to create new inputs for delay lines
-        let mut fdn_inputs = [0.0f32; 8];
+        // Apply fast Hadamard transform for FDN mixing
+        let mut fdn_inputs = delay_outputs.clone();
+        fast_hadamard_transform_8(&mut fdn_inputs);
+        
+        // Apply feedback gain
         for i in 0..8 {
-            fdn_inputs[i] = 0.0;
-            for j in 0..8 {
-                fdn_inputs[i] += delay_outputs[j] * FDN_MATRIX[i][j] * self.feedback_gain;
-            }
+            fdn_inputs[i] *= self.feedback_gain;
         }
 
         // Add stereo input to delay lines with full gain for better audibility
@@ -527,11 +537,9 @@ impl StereoAudioProcessor for FDNReverb {
             self.delay_lines[i].write(fdn_inputs[i]);
         }
 
-        // Create stereo output by mixing delay line outputs
-        let out_left =
-            (delay_outputs[0] + delay_outputs[2] + delay_outputs[4] + delay_outputs[6]) * 0.25;
-        let out_right =
-            (delay_outputs[1] + delay_outputs[3] + delay_outputs[5] + delay_outputs[7]) * 0.25;
+        // Create stereo output by mixing delay line outputs with higher gain
+        let out_left = (delay_outputs[0] + delay_outputs[2] + delay_outputs[4] + delay_outputs[6]) * 0.5;
+        let out_right = (delay_outputs[1] + delay_outputs[3] + delay_outputs[5] + delay_outputs[7]) * 0.5;
 
         (out_left, out_right)
     }
