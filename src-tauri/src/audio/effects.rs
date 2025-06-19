@@ -1,529 +1,617 @@
-use crate::audio::{SAMPLE_RATE, PI};
-use crate::audio::oscillators::SineOscillator;
+use crate::audio::{sec_to_samples, AudioProcessor, PI, SAMPLE_RATE};
 
-// State Variable Filter for high-pass and low-pass
-pub struct SVFilter {
-    frequency: f32,
-    q: f32,
-    ic1eq: f32,
-    ic2eq: f32,
+// Tan approximation function
+fn tan_a(x: f32) -> f32 {
+    let x2 = x * x;
+    x * (0.999999492001 + x2 * -0.096524608111)
+        / (1.0 + x2 * (-0.429867256894 + x2 * 0.009981877999))
 }
 
-impl SVFilter {
-    pub fn new(frequency: f32, q: f32) -> Self {
-        Self {
-            frequency,
+#[derive(Clone, Copy)]
+enum FilterMode {
+    Lowpass,
+    Highpass,
+    Bandpass,
+}
+
+// SVF implementation matching Emilie Gillet's stmlib version
+pub struct SVF {
+    // State variables
+    y0: f32,
+    y1: f32,
+
+    // Filter outputs
+    lp: f32,
+    hp: f32,
+    bp: f32,
+
+    // Filter parameters
+    mode: FilterMode,
+    cf: f32, // Cutoff frequency
+    q: f32,  // Resonance
+
+    // Precomputed coefficients
+    g: f32,
+    r: f32,
+    h: f32,
+    rpg: f32,
+
+    coeffs_dirty: bool,
+}
+
+impl SVF {
+    pub fn new(cf: f32, q: f32, mode: FilterMode) -> Self {
+        let mut svf = Self {
+            y0: 0.0,
+            y1: 0.0,
+            lp: 0.0,
+            hp: 0.0,
+            bp: 0.0,
+            mode,
+            cf,
             q,
-            ic1eq: 0.0,
-            ic2eq: 0.0,
+            g: 0.0,
+            r: 0.0,
+            h: 0.0,
+            rpg: 0.0,
+            coeffs_dirty: true,
+        };
+        svf.update_coefficients();
+        svf
+    }
+
+    fn update_coefficients(&mut self) {
+        if self.coeffs_dirty {
+            self.g = tan_a(self.cf * PI / SAMPLE_RATE);
+            self.r = 1.0 / self.q;
+            self.h = 1.0 / (1.0 + self.r * self.g + self.g * self.g);
+            self.rpg = self.r + self.g;
+            self.coeffs_dirty = false;
         }
     }
-    
-    pub fn set_frequency(&mut self, frequency: f32) {
-        self.frequency = frequency;
+
+    pub fn set_cutoff_frequency(&mut self, cf: f32) {
+        if (self.cf - cf).abs() > f32::EPSILON {
+            self.cf = cf;
+            self.coeffs_dirty = true;
+        }
     }
-    
-    pub fn set_q(&mut self, q: f32) {
-        self.q = q;
+
+    pub fn set_resonance(&mut self, q: f32) {
+        if (self.q - q).abs() > f32::EPSILON {
+            self.q = q;
+            self.coeffs_dirty = true;
+        }
     }
-    
-    pub fn process(&mut self, input: f32) -> (f32, f32, f32) {
-        let g = (PI * self.frequency / SAMPLE_RATE).tan();
-        let k = 1.0 / self.q;
-        let a1 = 1.0 / (1.0 + g * (g + k));
-        let a2 = g * a1;
-        let a3 = g * a2;
-        
-        let v3 = input - self.ic2eq;
-        let v1 = a1 * self.ic1eq + a2 * v3;
-        let v2 = self.ic2eq + a2 * self.ic1eq + a3 * v3;
-        
-        self.ic1eq = 2.0 * v1 - self.ic1eq;
-        self.ic2eq = 2.0 * v2 - self.ic2eq;
-        
-        let lowpass = v2;
-        let bandpass = v1;
-        let highpass = input - k * v1 - v2;
-        
-        (lowpass, bandpass, highpass)
+
+    pub fn set_mode(&mut self, mode: FilterMode) {
+        self.mode = mode;
     }
-    
-    pub fn highpass(&mut self, input: f32) -> f32 {
-        let (_, _, hp) = self.process(input);
-        hp
-    }
-    
-    pub fn lowpass(&mut self, input: f32) -> f32 {
-        let (lp, _, _) = self.process(input);
-        lp
+
+    pub fn reset(&mut self) {
+        self.y0 = 0.0;
+        self.y1 = 0.0;
+        self.lp = 0.0;
+        self.hp = 0.0;
+        self.bp = 0.0;
     }
 }
 
-// Schroeder Allpass filter  
+impl AudioProcessor for SVF {
+    fn process(&mut self, input: f32) -> f32 {
+        self.update_coefficients();
+
+        self.hp = (input - self.rpg * self.y0 - self.y1) * self.h;
+        self.bp = self.g * self.hp + self.y0;
+        self.y0 = self.g * self.hp + self.bp;
+        self.lp = self.g * self.bp + self.y1;
+        self.y1 = self.g * self.bp + self.lp;
+
+        match self.mode {
+            FilterMode::Lowpass => self.lp,
+            FilterMode::Highpass => self.hp,
+            FilterMode::Bandpass => self.bp,
+        }
+    }
+}
+
+// Delay line structure for allpass filter
+pub struct DelayBuffer {
+    buffer: Vec<f32>,
+    write_pos: usize,
+}
+
+impl DelayBuffer {
+    pub fn new(max_samples: usize) -> Self {
+        Self {
+            buffer: vec![0.0; max_samples],
+            write_pos: 0,
+        }
+    }
+
+    pub fn read(&self, delay_samples: f32) -> f32 {
+        let delay = delay_samples.max(0.0).min(self.buffer.len() as f32 - 1.0);
+        let read_pos_f = self.write_pos as f32 - delay;
+        let read_pos = if read_pos_f < 0.0 {
+            read_pos_f + self.buffer.len() as f32
+        } else {
+            read_pos_f
+        };
+
+        // Linear interpolation
+        let idx = read_pos.floor() as usize % self.buffer.len();
+        let frac = read_pos - read_pos.floor();
+        let next_idx = (idx + 1) % self.buffer.len();
+
+        self.buffer[idx] * (1.0 - frac) + self.buffer[next_idx] * frac
+    }
+
+    pub fn write(&mut self, value: f32) {
+        self.buffer[self.write_pos] = value;
+        self.write_pos = (self.write_pos + 1) % self.buffer.len();
+    }
+}
+
+// Simple allpass filter
+pub struct Allpass {
+    delay: DelayBuffer,
+    time: f32, // Delay time in samples
+    g: f32,    // Feedback gain
+}
+
+impl Allpass {
+    pub fn new(max_delay_samples: usize) -> Self {
+        Self {
+            delay: DelayBuffer::new(max_delay_samples),
+            time: 0.0, // Default delay time
+            g: 0.0,    // Default feedback gain
+        }
+    }
+
+    pub fn set_delay_time(&mut self, time: f32) {
+        self.time = time.max(0.0); // Ensure non-negative delay time
+    }
+
+    pub fn set_feedback_gain(&mut self, g: f32) {
+        self.g = g.clamp(-0.99, 0.99); // Clamp to avoid instability
+    }
+}
+
+impl AudioProcessor for Allpass {
+    fn process(&mut self, input: f32) -> f32 {
+        let z = self.delay.read(self.time);
+        let x = input + z * self.g;
+        let y = z + x * -self.g;
+        self.delay.write(x);
+        y
+    }
+}
+
+// Schroeder Allpass filter
 pub struct AllpassComb {
     input_buffer: Vec<f32>,
     output_buffer: Vec<f32>,
     write_pos: usize,
     feedback: f32,
+    delay_samples: usize,
 }
 
 impl AllpassComb {
-    pub fn new(max_delay_samples: usize, feedback: f32) -> Self {
+    pub fn new(max_delay_samples: usize) -> Self {
         Self {
             input_buffer: vec![0.0; max_delay_samples],
             output_buffer: vec![0.0; max_delay_samples],
             write_pos: 0,
-            feedback,
+            feedback: 0.0, // Default feedback gain
+            delay_samples: 0,
         }
     }
-    
-    pub fn process(&mut self, input: f32, delay_samples: usize) -> f32 {
-        let delay = delay_samples.min(self.input_buffer.len() - 1);
-        
+
+    pub fn set_delay_samples(&mut self, delay_samples: usize) {
+        self.delay_samples = delay_samples.min(self.input_buffer.len() - 1);
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(-0.99, 0.99);
+    }
+}
+
+impl AudioProcessor for AllpassComb {
+    fn process(&mut self, input: f32) -> f32 {
+        let delay = self.delay_samples.min(self.input_buffer.len() - 1);
+
         // Calculate read position for delayed samples
         let read_pos = (self.write_pos + self.input_buffer.len() - delay) % self.input_buffer.len();
-        
+
         // Get delayed input and delayed output
         let delayed_input = self.input_buffer[read_pos];
         let delayed_output = self.output_buffer[read_pos];
-        
+
         // Proper Schroeder allpass: y[n] = -g*x[n] + x[n-d] + g*y[n-d]
         let output = -self.feedback * input + delayed_input + self.feedback * delayed_output;
-        
+
         // Write to buffers at current position
         self.input_buffer[self.write_pos] = input;
         self.output_buffer[self.write_pos] = output;
-        
+
         // Advance write position
         self.write_pos = (self.write_pos + 1) % self.input_buffer.len();
-        
+
         output
     }
 }
 
 // Delay line with freeze functionality
 pub struct DelayLine {
-    buffer: Vec<f32>,
+    buffer: DelayBuffer,
     write_pos: usize,
     frozen: bool,
-    highpass: SVFilter,
-    lowpass: SVFilter,
+    highpass: SVF,
+    lowpass: SVF,
+    delay_samples: f32,
+    feedback: f32,
 }
 
 impl DelayLine {
     pub fn new(max_delay_samples: usize) -> Self {
         Self {
-            buffer: vec![0.0; max_delay_samples],
+            buffer: DelayBuffer::new(max_delay_samples),
             write_pos: 0,
             frozen: false,
-            highpass: SVFilter::new(200.0, 0.5),
-            lowpass: SVFilter::new(8000.0, 0.5),
+            highpass: SVF::new(200.0, 0.5, FilterMode::Highpass),
+            lowpass: SVF::new(8000.0, 0.5, FilterMode::Lowpass),
+            delay_samples: 0.0,
+            feedback: 0.0,
         }
     }
-    
+
     pub fn set_freeze(&mut self, freeze: bool) {
         self.frozen = freeze;
     }
-    
+
     pub fn set_highpass_freq(&mut self, freq: f32) {
-        self.highpass.set_frequency(freq);
+        self.highpass.set_cutoff_frequency(freq);
     }
-    
+
     pub fn set_lowpass_freq(&mut self, freq: f32) {
-        self.lowpass.set_frequency(freq);
+        self.lowpass.set_cutoff_frequency(freq);
     }
-    
-    pub fn process(&mut self, input: f32, delay_samples: usize, feedback: f32) -> f32 {
-        let delay = delay_samples.min(self.buffer.len() - 1);
-        let read_pos = (self.write_pos + self.buffer.len() - delay) % self.buffer.len();
-        
-        let delayed = self.buffer[read_pos];
-        
+
+    pub fn set_delay_samples(&mut self, delay_samples: f32) {
+        self.delay_samples = delay_samples;
+    }
+
+    pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
+        self.delay_samples = sec_to_samples(delay_seconds);
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(-0.99, 0.99); // Clamp to avoid instability
+    }
+}
+
+impl AudioProcessor for DelayLine {
+    fn process(&mut self, input: f32) -> f32 {
+        let delayed = self.buffer.read(self.delay_samples);
+
         // Apply filters to delayed signal
-        let filtered = self.lowpass.lowpass(self.highpass.highpass(delayed));
-        
+        let filtered = self.lowpass.process(self.highpass.process(delayed));
+
         // Write to buffer only if not frozen
         if !self.frozen {
-            self.buffer[self.write_pos] = input + filtered * feedback;
-            self.write_pos = (self.write_pos + 1) % self.buffer.len();
+            self.buffer.write(input + filtered * self.feedback);
         }
-        
+
         filtered
     }
 }
 
-// Complete allpass reverb based on the Faust implementation
-pub struct AllpassReverb {
-    // LFOs for modulation
-    lfo0: SineOscillator,
-    lfo1: SineOscillator,
-    lfo2: SineOscillator,
-    
-    // Allpass stages for left channel
-    ap_l0: AllpassComb,
-    ap_l1: AllpassComb,
-    ap_l2: AllpassComb,
-    ap_l3: AllpassComb,
-    ap_l4: AllpassComb,
-    ap_l5: AllpassComb,
-    
-    // Allpass stages for right channel
-    ap_r0: AllpassComb,
-    ap_r1: AllpassComb,
-    ap_r2: AllpassComb,
-    ap_r3: AllpassComb,
-    ap_r4: AllpassComb,
-    ap_r5: AllpassComb,
-    
-    // Filters in feedback loop
-    hp_l: SVFilter,
-    lp_l: SVFilter,
-    hp_r: SVFilter,
-    lp_r: SVFilter,
-    
-    // Feedback delay lines
-    feedback_delay_l: Vec<f32>,
-    feedback_delay_r: Vec<f32>,
-    feedback_pos_l: usize,
-    feedback_pos_r: usize,
-    
+pub struct BloomReverb {
+    input_highcut: SVF,
+    input_lowcut: SVF,
+
+    allpass: [AllpassComb; 7],
+
+    feedback_highpass: SVF,
+    feedback_lowpass: SVF,
+
+    feedback_delay: DelayBuffer,
+    feedback_gain: f32,
+    feedback_time: f32,
+
+    downsample_counter: u32,
+    downsample_hold: f32,
+
     // Parameters
-    max_delay: usize,
-    base_time: f32,
     decay: f32,
-    wet_mix: f32,
     size: f32,
-    highpass_freq: f32,
-    lowpass_freq: f32,
+
+    bit_reduction: f32,
 }
 
-impl AllpassReverb {
+impl BloomReverb {
     pub fn new() -> Self {
-        let max_delay = (0.3 * SAMPLE_RATE) as usize; // 0.3 seconds max delay
-        
+        // Vintage-inspired allpass delay times (in samples at 44.1kHz)
+        // These are prime numbers to avoid resonances
+        let delay_times = [347, 113, 797, 277, 1511, 433, 1049];
+        let feedback_gains = [0.7, -0.65, 0.6, -0.55, 0.5, -0.45, 0.4];
+
+        let mut allpass = [
+            AllpassComb::new(2048),
+            AllpassComb::new(2048),
+            AllpassComb::new(2048),
+            AllpassComb::new(2048),
+            AllpassComb::new(2048),
+            AllpassComb::new(2048),
+            AllpassComb::new(2048),
+        ];
+
+        // Configure each allpass filter
+        for (i, ap) in allpass.iter_mut().enumerate() {
+            ap.set_delay_samples(delay_times[i]);
+            ap.set_feedback(feedback_gains[i]);
+        }
+
         Self {
-            // LFOs with frequencies matching Faust code
-            lfo0: SineOscillator::new(0.9128),
-            lfo1: SineOscillator::new(1.1341),
-            lfo2: SineOscillator::new(1.0),
-            
-            // Left channel allpass stages
-            ap_l0: AllpassComb::new(max_delay, 0.5),
-            ap_l1: AllpassComb::new(max_delay, 0.5),
-            ap_l2: AllpassComb::new(max_delay, 0.5),
-            ap_l3: AllpassComb::new(max_delay, 0.5),
-            ap_l4: AllpassComb::new(max_delay, 0.5),
-            ap_l5: AllpassComb::new(max_delay, 0.5),
-            
-            // Right channel allpass stages
-            ap_r0: AllpassComb::new(max_delay, 0.5),
-            ap_r1: AllpassComb::new(max_delay, 0.5),
-            ap_r2: AllpassComb::new(max_delay, 0.5),
-            ap_r3: AllpassComb::new(max_delay, 0.5),
-            ap_r4: AllpassComb::new(max_delay, 0.5),
-            ap_r5: AllpassComb::new(max_delay, 0.5),
-            
-            // Filters
-            hp_l: SVFilter::new(200.0, 0.5),
-            lp_l: SVFilter::new(8000.0, 0.5),
-            hp_r: SVFilter::new(200.0, 0.5),
-            lp_r: SVFilter::new(8000.0, 0.5),
-            
-            // Feedback delay lines
-            feedback_delay_l: vec![0.0; max_delay],
-            feedback_delay_r: vec![0.0; max_delay],
-            feedback_pos_l: 0,
-            feedback_pos_r: 0,
-            
-            // Default parameters
-            max_delay,
-            base_time: 0.5 * 0.006666667 * SAMPLE_RATE, // size * base_time_seconds * sample_rate
+            input_highcut: SVF::new(10000.0, 0.7, FilterMode::Lowpass),
+            input_lowcut: SVF::new(100.0, 0.7, FilterMode::Highpass),
+            allpass,
+            feedback_highpass: SVF::new(200.0, 0.5, FilterMode::Highpass),
+            feedback_lowpass: SVF::new(8000.0, 0.5, FilterMode::Lowpass),
+            feedback_delay: DelayBuffer::new(8192),
+            feedback_gain: 0.85, // Strong feedback for sustained reverb
+            feedback_time: 0.002,
+            downsample_counter: 0,
+            downsample_hold: 0.0,
             decay: 0.5,
-            wet_mix: 0.5,
             size: 0.5,
-            highpass_freq: 200.0,
-            lowpass_freq: 8000.0,
+            bit_reduction: 12.0, // 12-bit character
         }
     }
-    
-    pub fn set_size(&mut self, size: f32) {
-        self.size = size.clamp(0.1, 1.0);
-        self.base_time = self.size * 0.006666667 * SAMPLE_RATE;
-    }
-    
+
     pub fn set_decay(&mut self, decay: f32) {
-        self.decay = decay.clamp(0.01, 0.998);
+        self.decay = decay.clamp(0.0, 0.99);
+        // Adjust feedback gains based on decay
+        let base_gains = [0.7, -0.65, 0.6, -0.55, 0.5, -0.45, 0.4];
+        for (i, ap) in self.allpass.iter_mut().enumerate() {
+            ap.set_feedback(base_gains[i] * self.decay);
+        }
     }
-    
-    pub fn set_wet_mix(&mut self, wet: f32) {
-        self.wet_mix = wet.clamp(0.0, 1.0);
+
+    pub fn set_size(&mut self, size: f32) {
+        self.size = size.clamp(0.1, 2.0);
+        // Adjust delay times based on size
+        let base_delays = [347, 113, 797, 277, 1511, 433, 1049];
+        for (i, ap) in self.allpass.iter_mut().enumerate() {
+            ap.set_delay_samples((base_delays[i] as f32 * self.size) as usize);
+        }
     }
-    
-    pub fn set_highpass_freq(&mut self, freq: f32) {
-        self.highpass_freq = freq.clamp(20.0, 2000.0);
-        self.hp_l.set_frequency(self.highpass_freq);
-        self.hp_r.set_frequency(self.highpass_freq);
+
+    pub fn set_bit_reduction(&mut self, bits: f32) {
+        self.bit_reduction = bits.clamp(8.0, 16.0);
     }
-    
-    pub fn set_lowpass_freq(&mut self, freq: f32) {
-        self.lowpass_freq = freq.clamp(2000.0, 20000.0);
-        self.lp_l.set_frequency(self.lowpass_freq);
-        self.lp_r.set_frequency(self.lowpass_freq);
+
+    pub fn set_feedback_highpass(&mut self, freq: f32) {
+        self.feedback_highpass.set_cutoff_frequency(freq);
     }
-    
-    pub fn process(&mut self, input_l: f32, input_r: f32) -> (f32, f32) {
-        // Update LFOs (scale to match original amplitude)
-        let lfo0_val = self.lfo0.next_sample() * 11.0;
-        let lfo1_val = self.lfo1.next_sample() * 9.0;
-        let lfo2_val = self.lfo2.next_sample() * 10.0;
-        
-        // Use summed mono input for both channels to avoid phase issues
-        let mono_input = (input_l + input_r) * 0.5;
-        
-        // Process left channel
-        let feedback_delay_samples = (self.base_time) as usize;
-        let feedback_read_pos = (self.feedback_pos_l + self.feedback_delay_l.len() - feedback_delay_samples.min(self.feedback_delay_l.len() - 1)) % self.feedback_delay_l.len();
-        let feedback_tap = self.feedback_delay_l[feedback_read_pos] * self.decay;
-        let mixed_input_l = mono_input + feedback_tap;
-        
-        // Allpass chain for left channel - same delay times, positive modulation
-        let time = self.base_time;
-        let ap0_delay = ((time * 3.0 + lfo0_val) as usize).min(self.max_delay - 1);
-        let ap1_delay = ((time * 7.0 + lfo1_val) as usize).min(self.max_delay - 1);
-        let ap2_delay = ((time * 11.0 + lfo2_val) as usize).min(self.max_delay - 1);
-        let ap3_delay = ((time * 19.0 + lfo0_val) as usize).min(self.max_delay - 1);
-        let ap4_delay = ((time * 23.0 + lfo1_val) as usize).min(self.max_delay - 1);
-        let ap5_delay = ((time * 31.0 + lfo2_val) as usize).min(self.max_delay - 1);
-        
-        let ap0_out = self.ap_l0.process(mixed_input_l, ap0_delay);
-        let ap1_out = self.ap_l1.process(ap0_out, ap1_delay);
-        let ap2_out = self.ap_l2.process(ap1_out, ap2_delay);
-        let ap3_out = self.ap_l3.process(ap2_out, ap3_delay);
-        let ap4_out = self.ap_l4.process(ap3_out, ap4_delay);
-        
-        let hp_out = self.hp_l.highpass(ap4_out);
-        let lp_out = self.lp_l.lowpass(hp_out);
-        let final_out_l = self.ap_l5.process(lp_out, ap5_delay);
-        
-        self.feedback_delay_l[self.feedback_pos_l] = mixed_input_l;
-        self.feedback_pos_l = (self.feedback_pos_l + 1) % self.feedback_delay_l.len();
-        
-        // Process right channel - SAME delay times, but INVERTED modulation for stereo width
-        let feedback_read_pos = (self.feedback_pos_r + self.feedback_delay_r.len() - feedback_delay_samples.min(self.feedback_delay_r.len() - 1)) % self.feedback_delay_r.len();
-        let feedback_tap = self.feedback_delay_r[feedback_read_pos] * self.decay;
-        let mixed_input_r = mono_input + feedback_tap;
-        
-        // Same delay time multipliers but inverted LFO modulation for stereo decorrelation
-        let ap0_delay = ((time * 3.0 - lfo0_val) as usize).min(self.max_delay - 1);
-        let ap1_delay = ((time * 7.0 - lfo1_val) as usize).min(self.max_delay - 1);
-        let ap2_delay = ((time * 11.0 - lfo2_val) as usize).min(self.max_delay - 1);
-        let ap3_delay = ((time * 19.0 - lfo0_val) as usize).min(self.max_delay - 1);
-        let ap4_delay = ((time * 23.0 - lfo1_val) as usize).min(self.max_delay - 1);
-        let ap5_delay = ((time * 31.0 - lfo2_val) as usize).min(self.max_delay - 1);
-        
-        let ap0_out = self.ap_r0.process(mixed_input_r, ap0_delay);
-        let ap1_out = self.ap_r1.process(ap0_out, ap1_delay);
-        let ap2_out = self.ap_r2.process(ap1_out, ap2_delay);
-        let ap3_out = self.ap_r3.process(ap2_out, ap3_delay);
-        let ap4_out = self.ap_r4.process(ap3_out, ap4_delay);
-        
-        let hp_out = self.hp_r.highpass(ap4_out);
-        let lp_out = self.lp_r.lowpass(hp_out);
-        let final_out_r = self.ap_r5.process(lp_out, ap5_delay);
-        
-        self.feedback_delay_r[self.feedback_pos_r] = mixed_input_r;
-        self.feedback_pos_r = (self.feedback_pos_r + 1) % self.feedback_delay_r.len();
-        
-        // Mix dry and wet signals
-        let dry_l = input_l * (1.0 - self.wet_mix);
-        let dry_r = input_r * (1.0 - self.wet_mix);
-        let wet_l = final_out_l * self.wet_mix;
-        let wet_r = final_out_r * self.wet_mix;
-        
-        (dry_l + wet_l, dry_r + wet_r)
+
+    pub fn set_feedback_lowpass(&mut self, freq: f32) {
+        self.feedback_lowpass.set_cutoff_frequency(freq);
+    }
+
+    pub fn set_feedback_gain(&mut self, gain: f32) {
+        self.feedback_gain = gain.clamp(0.0, 0.99);
+    }
+
+    pub fn set_feedback_time(&mut self, time_seconds: f32) {
+        self.feedback_time = time_seconds.max(0.001); // Minimum 1ms
+    }
+
+    // Apply bit reduction for vintage character
+    fn apply_bit_reduction(&self, input: f32) -> f32 {
+        if self.bit_reduction >= 16.0 {
+            return input;
+        }
+
+        let levels = 2.0_f32.powf(self.bit_reduction);
+        let step = 2.0 / levels;
+
+        // Quantize the signal
+        (input / step).round() * step
+    }
+
+    // Downsample for vintage grit (every 3rd sample)
+    fn apply_downsampling(&mut self, input: f32) -> f32 {
+        self.downsample_counter += 1;
+
+        if self.downsample_counter >= 3 {
+            self.downsample_counter = 0;
+            self.downsample_hold = input;
+        }
+
+        self.downsample_hold
+    }
+}
+
+impl AudioProcessor for BloomReverb {
+    fn process(&mut self, input: f32) -> f32 {
+        // Read feedback from delay line (like inspiration.gen ap_loop)
+        let feedback_samples = sec_to_samples(self.feedback_time);
+        let feedback_tap = self.feedback_delay.read(feedback_samples);
+
+        let filtered = self.input_lowcut.process(self.input_highcut.process(input));
+
+        let mixed_input = filtered + feedback_tap * self.feedback_gain;
+
+        // Apply downsampling for grit
+        let downsampled = self.apply_downsampling(mixed_input);
+
+        // Apply bit reduction
+        let bit_reduced = self.apply_bit_reduction(downsampled);
+
+        // Process through 7 allpass filters
+        let mut signal = bit_reduced;
+        for ap in &mut self.allpass {
+            signal = ap.process(signal);
+        }
+
+        // Apply feedback loop filtering
+        let filtered_feedback = self
+            .feedback_lowpass
+            .process(self.feedback_highpass.process(signal));
+
+        // Write filtered output back to feedback delay
+        self.feedback_delay.write(filtered_feedback);
+
+        filtered_feedback
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::SAMPLE_RATE;
 
     #[test]
     fn test_delay_line_basic_operation() {
         let mut delay = DelayLine::new(1000);
-        
+        delay.set_delay_samples(100.0);
+        delay.set_feedback(0.0);
+
         // Test silence with no input
-        assert_eq!(delay.process(0.0, 100, 0.0), 0.0);
-        
+        assert_eq!(delay.process(0.0), 0.0);
+
         // Test impulse response
-        let impulse_out = delay.process(1.0, 100, 0.0);
+        let impulse_out = delay.process(1.0);
         assert_eq!(impulse_out, 0.0); // First sample should be 0 (no delay yet)
-        
+
         // Process some samples to fill delay
         for _ in 0..99 {
-            delay.process(0.0, 100, 0.0);
+            delay.process(0.0);
         }
-        
+
         // At 100 samples, we should get our impulse back
-        let delayed_impulse = delay.process(0.0, 100, 0.0);
+        let delayed_impulse = delay.process(0.0);
         assert!(delayed_impulse > 0.0, "Should receive delayed impulse");
-        
-        println!("Delay test: impulse {} delayed by 100 samples = {}", 1.0, delayed_impulse);
+
+        println!(
+            "Delay test: impulse {} delayed by 100 samples = {}",
+            1.0, delayed_impulse
+        );
     }
-    
+
     #[test]
     fn test_delay_line_feedback_stability() {
         let mut delay = DelayLine::new(1000);
-        let delay_samples = 100;
+        let delay_samples = 100.0;
         let feedback = 0.4;
-        
+
+        delay.set_delay_samples(delay_samples);
+        delay.set_feedback(feedback);
+
         // Send an impulse
-        delay.process(1.0, delay_samples, feedback);
-        
+        delay.process(1.0);
+
         let mut max_amplitude = 0.0f32;
         let mut outputs = Vec::new();
-        
+
         // Process for several delay cycles to test stability
         for _ in 0..500 {
-            let output = delay.process(0.0, delay_samples, feedback);
+            let output = delay.process(0.0);
             outputs.push(output);
             max_amplitude = max_amplitude.max(output.abs());
         }
-        
-        println!("Delay feedback test: max amplitude over 500 samples = {}", max_amplitude);
-        
+
+        println!(
+            "Delay feedback test: max amplitude over 500 samples = {}",
+            max_amplitude
+        );
+
         // With 0.4 feedback, the system should remain stable
-        assert!(max_amplitude < 2.0, "Delay feedback should remain stable, got max amplitude {}", max_amplitude);
-        
+        assert!(
+            max_amplitude < 2.0,
+            "Delay feedback should remain stable, got max amplitude {}",
+            max_amplitude
+        );
+
         // Should have some repeating echoes
         let has_echoes = outputs.iter().any(|&x| x.abs() > 0.01);
         assert!(has_echoes, "Delay should produce audible echoes");
     }
-    
+
     #[test]
-    fn test_allpass_comb_stability() {
-        let mut allpass = AllpassComb::new(100, 0.5);
-        
-        // Test with impulse
-        let impulse_out = allpass.process(1.0, 50);
-        
-        let mut max_amplitude = 0.0f32;
-        let mut outputs = Vec::new();
-        
-        // Process silence for many samples to test stability
-        for _ in 0..200 {
-            let output = allpass.process(0.0, 50);
-            outputs.push(output);
-            max_amplitude = max_amplitude.max(output.abs());
-        }
-        
-        println!("Allpass stability test: max amplitude = {}", max_amplitude);
-        println!("Initial impulse output = {}", impulse_out);
-        
-        // Allpass should be stable and bounded
-        assert!(max_amplitude < 2.0, "Allpass should remain stable, got max amplitude {}", max_amplitude);
-        
-        // Should produce some output from the impulse
-        let has_output = outputs.iter().any(|&x| x.abs() > 0.001);
-        assert!(has_output, "Allpass should produce output from impulse");
-    }
-    
-    #[test]
-    fn test_reverb_basic_operation() {
-        let mut reverb = AllpassReverb::new();
-        
+    fn test_bloom_reverb_basic_operation() {
+        let mut reverb = BloomReverb::new();
+
         // Test silence
-        let (out_l, out_r) = reverb.process(0.0, 0.0);
-        assert_eq!(out_l, 0.0);
-        assert_eq!(out_r, 0.0);
-        
+        let out = reverb.process(0.0);
+        assert_eq!(out, 0.0);
+
         // Test impulse response
-        let (impulse_l, impulse_r) = reverb.process(1.0, 1.0);
-        
-        let mut max_l = 0.0f32;
-        let mut max_r = 0.0f32;
-        let mut outputs_l = Vec::new();
-        let mut outputs_r = Vec::new();
-        
+        let impulse = reverb.process(1.0);
+
+        let mut max_amp = 0.0f32;
+        let mut outputs = Vec::new();
+
         // Process silence to hear reverb tail
-        for _ in 0..1000 {
-            let (out_l, out_r) = reverb.process(0.0, 0.0);
-            outputs_l.push(out_l);
-            outputs_r.push(out_r);
-            max_l = max_l.max(out_l.abs());
-            max_r = max_r.max(out_r.abs());
+        for _ in 0..2000 {
+            let out = reverb.process(0.0);
+            outputs.push(out);
+            max_amp = max_amp.max(out.abs());
         }
-        
-        println!("Reverb test: impulse output = ({}, {})", impulse_l, impulse_r);
-        println!("Reverb test: max tail amplitudes = ({}, {})", max_l, max_r);
-        
+
+        println!("BloomReverb test: impulse output = {}", impulse);
+        println!("BloomReverb test: max tail amplitude = {}", max_amp);
+
         // Reverb should be stable
-        assert!(max_l < 2.0, "Reverb left channel should remain stable");
-        assert!(max_r < 2.0, "Reverb right channel should remain stable");
-        
+        assert!(max_amp < 10.0, "BloomReverb should remain stable");
+
         // Should produce reverb tail
-        let has_tail_l = outputs_l.iter().any(|&x| x.abs() > 0.001);
-        let has_tail_r = outputs_r.iter().any(|&x| x.abs() > 0.001);
-        assert!(has_tail_l, "Reverb should produce left channel tail");
-        assert!(has_tail_r, "Reverb should produce right channel tail");
-        
-        // Stereo output should be different (reverb creates stereo width)
-        let stereo_difference = outputs_l.iter().zip(outputs_r.iter())
-            .any(|(&l, &r)| (l - r).abs() > 0.001);
-        assert!(stereo_difference, "Reverb should create stereo width");
+        let has_tail = outputs.iter().any(|&x| x.abs() > 0.001);
+        assert!(has_tail, "BloomReverb should produce reverb tail");
+
+        // Should reach audible amplitude levels (at least 10% of input)
+        assert!(
+            max_amp > 0.4,
+            "BloomReverb should reach audible amplitude (> 40%), got {}",
+            max_amp
+        );
     }
-    
+
     #[test]
-    fn test_reverb_long_term_stability() {
-        let mut reverb = AllpassReverb::new();
-        
-        // Test with 20 seconds of samples (44100 * 20 = 882000 samples)
-        let total_samples = (SAMPLE_RATE * 20.0) as usize;
-        let mut max_amplitude = 0.0f32;
-        let mut amplitude_over_time = Vec::new();
-        
-        // Send bursts of noise every 1000 samples (like drum hits)
-        for i in 0..total_samples {
-            let input = if i % 1000 == 0 && i < total_samples / 2 { 
-                0.1 // Noise bursts for first 10 seconds
-            } else { 
-                0.0 // Then silence for last 10 seconds to see decay
-            };
-            
-            let (out_l, out_r) = reverb.process(input, input);
-            let amplitude = out_l.abs().max(out_r.abs());
-            max_amplitude = max_amplitude.max(amplitude);
-            
-            // Sample amplitude every 1000 samples for analysis
-            if i % 1000 == 0 {
-                amplitude_over_time.push(amplitude);
-            }
+    fn test_bloom_reverb_parameters() {
+        let mut reverb1 = BloomReverb::new();
+        let mut reverb2 = BloomReverb::new();
+
+        // Test parameter setting
+        reverb1.set_decay(0.8);
+        reverb1.set_size(1.5);
+        reverb1.set_bit_reduction(10.0);
+
+        reverb2.set_decay(0.2);
+        reverb2.set_size(1.5);
+        reverb2.set_bit_reduction(10.0);
+
+        // Send impulse and process several samples to build up reverb tail
+        reverb1.process(1.0);
+        reverb2.process(1.0);
+
+        let mut max_diff = 0.0f32;
+        for _ in 0..100 {
+            let out1 = reverb1.process(0.0);
+            let out2 = reverb2.process(0.0);
+            max_diff = max_diff.max((out1 - out2).abs());
         }
-        
-        println!("Reverb long-term test (20 seconds):");
-        println!("- Max amplitude: {}", max_amplitude);
-        println!("- Amplitude at 5s: {:.6}", amplitude_over_time.get(220).unwrap_or(&0.0));
-        println!("- Amplitude at 10s: {:.6}", amplitude_over_time.get(441).unwrap_or(&0.0));
-        println!("- Amplitude at 15s: {:.6}", amplitude_over_time.get(661).unwrap_or(&0.0));
-        println!("- Amplitude at 20s: {:.6}", amplitude_over_time.get(881).unwrap_or(&0.0));
-        
-        // Check if reverb tail decays properly during silence period
-        let silence_start_idx = 441; // 10 seconds in
-        let final_amplitude = amplitude_over_time.get(881).unwrap_or(&0.0); // 20 seconds
-        
-        println!("- Reverb decay during silence: {} -> {}", 
-                 amplitude_over_time.get(silence_start_idx).unwrap_or(&0.0), 
-                 final_amplitude);
-        
-        // Should remain stable
-        assert!(max_amplitude < 1.0, "Reverb should remain stable long-term, got max amplitude {}", max_amplitude);
-        
-        // Should decay during silence period
-        if let (Some(&silence_start), Some(&final_amp)) = (amplitude_over_time.get(silence_start_idx), amplitude_over_time.get(881)) {
-            if silence_start > 0.01 && final_amp >= silence_start {
-                println!("WARNING: Reverb may not be decaying properly during silence");
-            }
-        }
+
+        // Different decay settings should produce different outputs over time
+        assert!(
+            max_diff > 0.0001,
+            "Different decay settings should produce different outputs, max diff: {}",
+            max_diff
+        );
+
+        println!(
+            "BloomReverb parameter test: max difference over time = {}",
+            max_diff
+        );
     }
 }

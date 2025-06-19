@@ -1,5 +1,6 @@
 use crate::audio::oscillators::{SineOscillator, NoiseGenerator};
 use crate::audio::envelopes::{AREnvelope, CurveType};
+use crate::audio::AudioGenerator;
 
 pub struct KickDrum {
     oscillator: SineOscillator,
@@ -62,7 +63,13 @@ impl KickDrum {
         self.freq_envelope.set_release_time(time);
     }
     
-    pub fn next_sample(&mut self) -> f32 {
+    pub fn is_active(&self) -> bool {
+        self.amp_envelope.is_active()
+    }
+}
+
+impl AudioGenerator for KickDrum {
+    fn next_sample(&mut self) -> f32 {
         let amp_env = self.amp_envelope.next_sample();
         let freq_env = self.freq_envelope.next_sample();
         
@@ -71,10 +78,6 @@ impl KickDrum {
         
         let sample = self.oscillator.next_sample();
         sample * amp_env
-    }
-    
-    pub fn is_active(&self) -> bool {
-        self.amp_envelope.is_active()
     }
 }
 
@@ -110,13 +113,15 @@ impl SnareDrum {
         self.amp_envelope.set_release_time(time);
     }
     
-    pub fn next_sample(&mut self) -> f32 {
+    pub fn is_active(&self) -> bool {
+        self.amp_envelope.is_active()
+    }
+}
+
+impl AudioGenerator for SnareDrum {
+    fn next_sample(&mut self) -> f32 {
         let amp_env = self.amp_envelope.next_sample();
         let sample = self.noise_generator.next_sample();
         sample * amp_env
-    }
-    
-    pub fn is_active(&self) -> bool {
-        self.amp_envelope.is_active()
     }
 }

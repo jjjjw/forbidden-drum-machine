@@ -1,4 +1,4 @@
-use crate::audio::{SAMPLE_RATE, TWO_PI};
+use crate::audio::{AudioGenerator, SAMPLE_RATE, TWO_PI};
 use once_cell::sync::Lazy;
 
 const SINE_TABLE_SIZE: usize = 4096;
@@ -9,38 +9,65 @@ static SINE_TABLE: Lazy<Vec<f32>> = Lazy::new(|| {
         .collect()
 });
 
-pub struct SineOscillator {
+pub struct PhaseGenerator {
     phase: f32,
     frequency: f32,
+}
+
+impl PhaseGenerator {
+    pub fn new(frequency: f32) -> Self {
+        Self {
+            phase: 0.0,
+            frequency: frequency,
+        }
+    }
+
+    pub fn set_frequency(&mut self, frequency: f32) {
+        self.frequency = frequency;
+    }
+
+    pub fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+
+    pub fn next_sample(&mut self) -> f32 {
+        let sample = self.phase;
+        self.phase += self.frequency / SAMPLE_RATE;
+
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+
+        sample
+    }
+}
+
+pub struct SineOscillator {
+    phase_gen: PhaseGenerator,
 }
 
 impl SineOscillator {
     pub fn new(frequency: f32) -> Self {
         Self {
-            phase: 0.0,
-            frequency,
+            phase_gen: PhaseGenerator::new(frequency),
         }
     }
-    
+
     pub fn set_frequency(&mut self, frequency: f32) {
-        self.frequency = frequency;
+        self.phase_gen.set_frequency(frequency);
     }
-    
-    pub fn next_sample(&mut self) -> f32 {
-        let table_index = (self.phase * SINE_TABLE_SIZE as f32 / TWO_PI) as usize % SINE_TABLE_SIZE;
-        let sample = SINE_TABLE[table_index];
-        
-        self.phase += TWO_PI * self.frequency / SAMPLE_RATE;
-        
-        if self.phase >= TWO_PI {
-            self.phase -= TWO_PI;
-        }
-        
-        sample
-    }
-    
+
     pub fn reset(&mut self) {
-        self.phase = 0.0;
+        self.phase_gen.reset();
+    }
+}
+
+impl AudioGenerator for SineOscillator {
+    fn next_sample(&mut self) -> f32 {
+        let phase = self.phase_gen.next_sample();
+        let table_index = ((phase * SINE_TABLE_SIZE as f32) as usize) % SINE_TABLE_SIZE;
+        let sample = SINE_TABLE[table_index];
+        sample
     }
 }
 
@@ -54,8 +81,10 @@ impl NoiseGenerator {
             rng: fastrand::Rng::new(),
         }
     }
-    
-    pub fn next_sample(&mut self) -> f32 {
+}
+
+impl AudioGenerator for NoiseGenerator {
+    fn next_sample(&mut self) -> f32 {
         self.rng.f32() * 2.0 - 1.0
     }
 }
