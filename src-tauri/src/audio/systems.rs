@@ -1,7 +1,7 @@
-use crate::audio::effects::{BloomReverb, DelayLine};
+use crate::audio::effects::{DelayLine, FDNReverb};
 use crate::audio::instruments::{KickDrum, SnareDrum};
 use crate::audio::modulators::SampleAndHold;
-use crate::audio::{AudioGenerator, AudioProcessor, SAMPLE_RATE};
+use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, SAMPLE_RATE};
 
 pub struct Clock {
     bpm: f32,
@@ -67,7 +67,7 @@ pub struct DrumMachine {
 
     // Effects chain
     delay: DelayLine,
-    reverb: BloomReverb,
+    reverb: FDNReverb,
 
     // Effects sends
     delay_send: f32,
@@ -98,7 +98,7 @@ impl DrumMachine {
 
             // Initialize effects
             delay: DelayLine::new(delay_samples),
-            reverb: BloomReverb::new(),
+            reverb: FDNReverb::new(),
 
             // Default send levels
             delay_send: 0.2,
@@ -155,15 +155,16 @@ impl DrumMachine {
         self.delay.set_delay_seconds(modulated_delay_time);
         self.delay.set_feedback(0.4);
         let delay_output = self.delay.process(delay_input);
-        let reverb_output = self.reverb.process(reverb_input);
+        let (reverb_output_l, reverb_output_r) =
+            self.reverb.process_stereo(reverb_input, reverb_input);
 
         // Mix dry and wet signals with proper level management
         // Scale dry signal down since we're adding effects
         let dry_level = 0.6; // Leave headroom for effects
         let wet_level = 0.4; // Effects contribution
 
-        let output_l = dry_mixed * dry_level + (delay_output + reverb_output) * wet_level;
-        let output_r = dry_mixed * dry_level + (delay_output + reverb_output) * wet_level;
+        let output_l = dry_mixed * dry_level + (delay_output + reverb_output_l) * wet_level;
+        let output_r = dry_mixed * dry_level + (delay_output + reverb_output_r) * wet_level;
 
         (output_l, output_r)
     }
@@ -203,12 +204,6 @@ impl DrumMachine {
 
     pub fn set_reverb_decay(&mut self, decay: f32) {
         self.reverb.set_decay(decay);
-    }
-
-    pub fn set_reverb_wet_mix(&mut self, wet: f32) {
-        // Mix is handled at the system level as a send effect
-        // This method is kept for API compatibility but doesn't do anything
-        let _ = wet; // Suppress unused parameter warning
     }
 
     pub fn set_reverb_highpass(&mut self, freq: f32) {

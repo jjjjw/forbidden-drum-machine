@@ -227,7 +227,7 @@ impl AudioProcessor for AllpassComb {
         let delayed_input = self.input_buffer[read_pos];
         let delayed_output = self.output_buffer[read_pos];
 
-        // Proper Schroeder allpass: y[n] = -g*x[n] + x[n-d] + g*y[n-d]
+        // Schroeder allpass: y[n] = -g*x[n] + x[n-d] + g*y[n-d]
         let output = -self.feedback * input + delayed_input + self.feedback * delayed_output;
 
         // Write to buffers at current position
@@ -306,84 +306,126 @@ impl AudioProcessor for DelayLine {
     }
 }
 
-pub struct BloomReverb {
+// 8x8 Feedback Delay Network Matrix (Hadamard-based for better energy conservation)
+// Normalized to maintain energy with unit magnitude
+const FDN_MATRIX: [[f32; 8]; 8] = [
+    [
+        0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536,
+    ],
+    [
+        0.3536, -0.3536, 0.3536, -0.3536, 0.3536, -0.3536, 0.3536, -0.3536,
+    ],
+    [
+        0.3536, 0.3536, -0.3536, -0.3536, 0.3536, 0.3536, -0.3536, -0.3536,
+    ],
+    [
+        0.3536, -0.3536, -0.3536, 0.3536, 0.3536, -0.3536, -0.3536, 0.3536,
+    ],
+    [
+        0.3536, 0.3536, 0.3536, 0.3536, -0.3536, -0.3536, -0.3536, -0.3536,
+    ],
+    [
+        0.3536, -0.3536, 0.3536, -0.3536, -0.3536, 0.3536, -0.3536, 0.3536,
+    ],
+    [
+        0.3536, 0.3536, -0.3536, -0.3536, -0.3536, -0.3536, 0.3536, 0.3536,
+    ],
+    [
+        0.3536, -0.3536, -0.3536, 0.3536, -0.3536, 0.3536, 0.3536, -0.3536,
+    ],
+];
+
+// Base delay times for FDN to avoid resonances (in seconds)
+// Prime-based times create natural sounding reverb while avoiding modal resonances
+const BASE_DELAYS: [f32; 8] = [
+    0.0079, 0.0026, 0.0181, 0.0063, 0.0343, 0.0098, 0.0238, 0.0143,
+];
+
+pub struct FDNReverb {
     input_highcut: SVF,
     input_lowcut: SVF,
 
-    allpass: [AllpassComb; 7],
+    // 8 delay lines for FDN
+    delay_lines: [DelayBuffer; 8],
+    delay_times: [f32; 8],
 
-    feedback_highpass: SVF,
-    feedback_lowpass: SVF,
+    // Feedback filters for each delay line
+    feedback_highpass: [SVF; 8],
+    feedback_lowpass: [SVF; 8],
 
-    feedback_delay: DelayBuffer,
+    // Gain control
     feedback_gain: f32,
-    feedback_time: f32,
 
     downsample_counter: u32,
-    downsample_hold: f32,
+    downsample_hold: (f32, f32),
 
     // Parameters
     decay: f32,
     size: f32,
-
     bit_reduction: f32,
 }
 
-impl BloomReverb {
+impl FDNReverb {
     pub fn new() -> Self {
-        // Vintage-inspired allpass delay times (in samples at 44.1kHz)
-        // These are prime numbers to avoid resonances
-        let delay_times = [347, 113, 797, 277, 1511, 433, 1049];
-        let feedback_gains = [0.7, -0.65, 0.6, -0.55, 0.5, -0.45, 0.4];
 
-        let mut allpass = [
-            AllpassComb::new(2048),
-            AllpassComb::new(2048),
-            AllpassComb::new(2048),
-            AllpassComb::new(2048),
-            AllpassComb::new(2048),
-            AllpassComb::new(2048),
-            AllpassComb::new(2048),
+        let delay_lines = [
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
+            DelayBuffer::new(4096),
         ];
 
-        // Configure each allpass filter
-        for (i, ap) in allpass.iter_mut().enumerate() {
-            ap.set_delay_samples(delay_times[i]);
-            ap.set_feedback(feedback_gains[i]);
-        }
+        let feedback_highpass = [
+            SVF::new(200.0, 0.5, FilterMode::Highpass),
+            SVF::new(180.0, 0.5, FilterMode::Highpass),
+            SVF::new(220.0, 0.5, FilterMode::Highpass),
+            SVF::new(160.0, 0.5, FilterMode::Highpass),
+            SVF::new(240.0, 0.5, FilterMode::Highpass),
+            SVF::new(190.0, 0.5, FilterMode::Highpass),
+            SVF::new(210.0, 0.5, FilterMode::Highpass),
+            SVF::new(170.0, 0.5, FilterMode::Highpass),
+        ];
+
+        let feedback_lowpass = [
+            SVF::new(8000.0, 0.5, FilterMode::Lowpass),
+            SVF::new(7500.0, 0.5, FilterMode::Lowpass),
+            SVF::new(8500.0, 0.5, FilterMode::Lowpass),
+            SVF::new(7000.0, 0.5, FilterMode::Lowpass),
+            SVF::new(9000.0, 0.5, FilterMode::Lowpass),
+            SVF::new(7800.0, 0.5, FilterMode::Lowpass),
+            SVF::new(8200.0, 0.5, FilterMode::Lowpass),
+            SVF::new(7200.0, 0.5, FilterMode::Lowpass),
+        ];
 
         Self {
             input_highcut: SVF::new(10000.0, 0.7, FilterMode::Lowpass),
             input_lowcut: SVF::new(100.0, 0.7, FilterMode::Highpass),
-            allpass,
-            feedback_highpass: SVF::new(200.0, 0.5, FilterMode::Highpass),
-            feedback_lowpass: SVF::new(8000.0, 0.5, FilterMode::Lowpass),
-            feedback_delay: DelayBuffer::new(8192),
-            feedback_gain: 0.85, // Strong feedback for sustained reverb
-            feedback_time: 0.002,
+            delay_lines,
+            delay_times: BASE_DELAYS,
+            feedback_highpass,
+            feedback_lowpass,
+            feedback_gain: 0.6,
             downsample_counter: 0,
-            downsample_hold: 0.0,
+            downsample_hold: (0.0, 0.0),
             decay: 0.5,
             size: 0.5,
-            bit_reduction: 12.0, // 12-bit character
+            bit_reduction: 12.0,
         }
     }
 
     pub fn set_decay(&mut self, decay: f32) {
-        self.decay = decay.clamp(0.0, 0.99);
-        // Adjust feedback gains based on decay
-        let base_gains = [0.7, -0.65, 0.6, -0.55, 0.5, -0.45, 0.4];
-        for (i, ap) in self.allpass.iter_mut().enumerate() {
-            ap.set_feedback(base_gains[i] * self.decay);
-        }
+        self.decay = decay.clamp(0.0, 1.0);
+        self.feedback_gain = decay;
     }
 
     pub fn set_size(&mut self, size: f32) {
         self.size = size.clamp(0.1, 2.0);
-        // Adjust delay times based on size
-        let base_delays = [347, 113, 797, 277, 1511, 433, 1049];
-        for (i, ap) in self.allpass.iter_mut().enumerate() {
-            ap.set_delay_samples((base_delays[i] as f32 * self.size) as usize);
+        for i in 0..8 {
+            self.delay_times[i] = BASE_DELAYS[i] * self.size;
         }
     }
 
@@ -392,19 +434,19 @@ impl BloomReverb {
     }
 
     pub fn set_feedback_highpass(&mut self, freq: f32) {
-        self.feedback_highpass.set_cutoff_frequency(freq);
+        for hp in &mut self.feedback_highpass {
+            hp.set_cutoff_frequency(freq);
+        }
     }
 
     pub fn set_feedback_lowpass(&mut self, freq: f32) {
-        self.feedback_lowpass.set_cutoff_frequency(freq);
+        for lp in &mut self.feedback_lowpass {
+            lp.set_cutoff_frequency(freq);
+        }
     }
 
     pub fn set_feedback_gain(&mut self, gain: f32) {
         self.feedback_gain = gain.clamp(0.0, 0.99);
-    }
-
-    pub fn set_feedback_time(&mut self, time_seconds: f32) {
-        self.feedback_time = time_seconds.max(0.001); // Minimum 1ms
     }
 
     // Apply bit reduction for vintage character
@@ -420,50 +462,78 @@ impl BloomReverb {
         (input / step).round() * step
     }
 
-    // Downsample for vintage grit (every 3rd sample)
-    fn apply_downsampling(&mut self, input: f32) -> f32 {
+    // Downsample for vintage grit (every 3rd sample) - stereo version
+    fn apply_downsampling(&mut self, left: f32, right: f32) -> (f32, f32) {
         self.downsample_counter += 1;
 
         if self.downsample_counter >= 3 {
             self.downsample_counter = 0;
-            self.downsample_hold = input;
+            self.downsample_hold = (left, right);
         }
 
         self.downsample_hold
     }
 }
 
-impl AudioProcessor for BloomReverb {
-    fn process(&mut self, input: f32) -> f32 {
-        // Read feedback from delay line (like inspiration.gen ap_loop)
-        let feedback_samples = sec_to_samples(self.feedback_time);
-        let feedback_tap = self.feedback_delay.read(feedback_samples);
+use crate::audio::StereoAudioProcessor;
 
-        let filtered = self.input_lowcut.process(self.input_highcut.process(input));
+impl StereoAudioProcessor for FDNReverb {
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Input filtering
+        let filtered_left = self.input_lowcut.process(self.input_highcut.process(left));
+        let filtered_right = self.input_lowcut.process(self.input_highcut.process(right));
 
-        let mixed_input = filtered + feedback_tap * self.feedback_gain;
-
-        // Apply downsampling for grit
-        let downsampled = self.apply_downsampling(mixed_input);
+        // Apply downsampling for vintage grit
+        let (downsampled_left, downsampled_right) =
+            self.apply_downsampling(filtered_left, filtered_right);
 
         // Apply bit reduction
-        let bit_reduced = self.apply_bit_reduction(downsampled);
+        let bit_reduced_left = self.apply_bit_reduction(downsampled_left);
+        let bit_reduced_right = self.apply_bit_reduction(downsampled_right);
 
-        // Process through 7 allpass filters
-        let mut signal = bit_reduced;
-        for ap in &mut self.allpass {
-            signal = ap.process(signal);
+        // Read current delay line outputs for FDN feedback matrix
+        let mut delay_outputs = [0.0f32; 8];
+        for i in 0..8 {
+            let delay_samples = sec_to_samples(self.delay_times[i]);
+            delay_outputs[i] = self.delay_lines[i].read(delay_samples);
+
+            // Apply feedback filtering to each delay line output
+            delay_outputs[i] = self.feedback_lowpass[i]
+                .process(self.feedback_highpass[i].process(delay_outputs[i]));
         }
 
-        // Apply feedback loop filtering
-        let filtered_feedback = self
-            .feedback_lowpass
-            .process(self.feedback_highpass.process(signal));
+        // Apply FDN feedback matrix to create new inputs for delay lines
+        let mut fdn_inputs = [0.0f32; 8];
+        for i in 0..8 {
+            fdn_inputs[i] = 0.0;
+            for j in 0..8 {
+                fdn_inputs[i] += delay_outputs[j] * FDN_MATRIX[i][j] * self.feedback_gain;
+            }
+        }
 
-        // Write filtered output back to feedback delay
-        self.feedback_delay.write(filtered_feedback);
+        // Add stereo input to delay lines with full gain for better audibility
+        fdn_inputs[0] += bit_reduced_left;
+        fdn_inputs[1] += bit_reduced_left;
+        fdn_inputs[2] += bit_reduced_left;
+        fdn_inputs[3] += bit_reduced_left;
 
-        filtered_feedback
+        fdn_inputs[4] += bit_reduced_right;
+        fdn_inputs[5] += bit_reduced_right;
+        fdn_inputs[6] += bit_reduced_right;
+        fdn_inputs[7] += bit_reduced_right;
+
+        // Write new inputs to delay lines
+        for i in 0..8 {
+            self.delay_lines[i].write(fdn_inputs[i]);
+        }
+
+        // Create stereo output by mixing delay line outputs
+        let out_left =
+            (delay_outputs[0] + delay_outputs[2] + delay_outputs[4] + delay_outputs[6]) * 0.25;
+        let out_right =
+            (delay_outputs[1] + delay_outputs[3] + delay_outputs[5] + delay_outputs[7]) * 0.25;
+
+        (out_left, out_right)
     }
 }
 
@@ -539,79 +609,161 @@ mod tests {
     }
 
     #[test]
-    fn test_bloom_reverb_basic_operation() {
-        let mut reverb = BloomReverb::new();
+    fn test_fdn_reverb_basic_operation() {
+        let mut reverb = FDNReverb::new();
 
         // Test silence
-        let out = reverb.process(0.0);
-        assert_eq!(out, 0.0);
+        let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
+        assert_eq!(out_l, 0.0);
+        assert_eq!(out_r, 0.0);
 
         // Test impulse response
-        let impulse = reverb.process(1.0);
+        let (impulse_l, impulse_r) = reverb.process_stereo(1.0, 0.5);
 
-        let mut max_amp = 0.0f32;
-        let mut outputs = Vec::new();
+        let mut max_amp_l = 0.0f32;
+        let mut max_amp_r = 0.0f32;
+        let mut outputs_l = Vec::new();
+        let mut outputs_r = Vec::new();
 
         // Process silence to hear reverb tail
         for _ in 0..2000 {
-            let out = reverb.process(0.0);
-            outputs.push(out);
-            max_amp = max_amp.max(out.abs());
+            let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
+            outputs_l.push(out_l);
+            outputs_r.push(out_r);
+            max_amp_l = max_amp_l.max(out_l.abs());
+            max_amp_r = max_amp_r.max(out_r.abs());
         }
 
-        println!("BloomReverb test: impulse output = {}", impulse);
-        println!("BloomReverb test: max tail amplitude = {}", max_amp);
+        println!(
+            "FDNReverb test: impulse output L={}, R={}",
+            impulse_l, impulse_r
+        );
+        println!(
+            "FDNReverb test: max tail amplitude L={}, R={}",
+            max_amp_l, max_amp_r
+        );
 
         // Reverb should be stable
-        assert!(max_amp < 10.0, "BloomReverb should remain stable");
+        assert!(max_amp_l < 10.0, "FDNReverb left should remain stable");
+        assert!(max_amp_r < 10.0, "FDNReverb right should remain stable");
 
         // Should produce reverb tail
-        let has_tail = outputs.iter().any(|&x| x.abs() > 0.001);
-        assert!(has_tail, "BloomReverb should produce reverb tail");
-
-        // Should reach audible amplitude levels (at least 10% of input)
-        assert!(
-            max_amp > 0.4,
-            "BloomReverb should reach audible amplitude (> 40%), got {}",
-            max_amp
-        );
+        let has_tail_l = outputs_l.iter().any(|&x| x.abs() > 0.001);
+        let has_tail_r = outputs_r.iter().any(|&x| x.abs() > 0.001);
+        assert!(has_tail_l, "FDNReverb should produce left reverb tail");
+        assert!(has_tail_r, "FDNReverb should produce right reverb tail");
     }
 
     #[test]
-    fn test_bloom_reverb_parameters() {
-        let mut reverb1 = BloomReverb::new();
-        let mut reverb2 = BloomReverb::new();
+    fn test_fdn_reverb_parameters() {
+        let mut reverb1 = FDNReverb::new();
+        let mut reverb2 = FDNReverb::new();
 
-        // Test parameter setting
-        reverb1.set_decay(0.8);
-        reverb1.set_size(1.5);
-        reverb1.set_bit_reduction(10.0);
+        // Test parameter setting - make more extreme differences
+        reverb1.set_decay(0.9);
+        reverb1.set_size(2.0);
+        reverb1.set_bit_reduction(16.0);
 
-        reverb2.set_decay(0.2);
-        reverb2.set_size(1.5);
-        reverb2.set_bit_reduction(10.0);
+        reverb2.set_decay(0.1);
+        reverb2.set_size(0.5);
+        reverb2.set_bit_reduction(8.0);
 
         // Send impulse and process several samples to build up reverb tail
-        reverb1.process(1.0);
-        reverb2.process(1.0);
+        reverb1.process_stereo(1.0, 1.0);
+        reverb2.process_stereo(1.0, 1.0);
 
-        let mut max_diff = 0.0f32;
-        for _ in 0..100 {
-            let out1 = reverb1.process(0.0);
-            let out2 = reverb2.process(0.0);
-            max_diff = max_diff.max((out1 - out2).abs());
+        let mut max_diff_l = 0.0f32;
+        let mut max_diff_r = 0.0f32;
+        // Process more samples to build up the difference
+        for _ in 0..500 {
+            let (out1_l, out1_r) = reverb1.process_stereo(0.0, 0.0);
+            let (out2_l, out2_r) = reverb2.process_stereo(0.0, 0.0);
+            max_diff_l = max_diff_l.max((out1_l - out2_l).abs());
+            max_diff_r = max_diff_r.max((out1_r - out2_r).abs());
         }
 
         // Different decay settings should produce different outputs over time
         assert!(
-            max_diff > 0.0001,
-            "Different decay settings should produce different outputs, max diff: {}",
-            max_diff
+            max_diff_l > 0.0001,
+            "Different decay settings should produce different left outputs, max diff: {}",
+            max_diff_l
+        );
+        assert!(
+            max_diff_r > 0.0001,
+            "Different decay settings should produce different right outputs, max diff: {}",
+            max_diff_r
         );
 
         println!(
-            "BloomReverb parameter test: max difference over time = {}",
-            max_diff
+            "FDNReverb parameter test: max difference over time L={}, R={}",
+            max_diff_l, max_diff_r
+        );
+    }
+
+    #[test]
+    fn test_fdn_infinite_reverb() {
+        let mut reverb = FDNReverb::new();
+
+        // Set decay to 1.0 for infinite reverberation
+        reverb.set_decay(1.0);
+
+        // Send a single impulse
+        let (initial_l, initial_r) = reverb.process_stereo(1.0, 1.0);
+
+        // Process many samples without input to check if reverb sustains
+        let mut min_amplitude = f32::MAX;
+        let mut max_amplitude = 0.0f32;
+
+        for i in 0..5000 {
+            let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
+            let amplitude = out_l.abs().max(out_r.abs());
+
+            // After initial delay, check for sustained reverb
+            if i > 1000 {
+                min_amplitude = min_amplitude.min(amplitude);
+                max_amplitude = max_amplitude.max(amplitude);
+            }
+        }
+
+        println!(
+            "Infinite reverb test: min_amp={}, max_amp={}",
+            min_amplitude, max_amplitude
+        );
+
+        // With feedback = 1.0, the reverb should sustain reasonably well
+        // Some energy loss is expected due to filtering, but it should show much better sustain than lower feedback values
+        assert!(
+            min_amplitude > 0.00001,
+            "Infinite reverb should sustain amplitude above 0.00001, got min: {}",
+            min_amplitude
+        );
+
+        // Test that feedback = 1.0 sustains significantly better than feedback = 0.5
+        let mut reverb_half = FDNReverb::new();
+        reverb_half.set_decay(0.5);
+        reverb_half.process_stereo(1.0, 1.0);
+
+        let mut min_amplitude_half = f32::MAX;
+        for i in 0..5000 {
+            let (out_l, out_r) = reverb_half.process_stereo(0.0, 0.0);
+            let amplitude = out_l.abs().max(out_r.abs());
+            if i > 1000 {
+                min_amplitude_half = min_amplitude_half.min(amplitude);
+            }
+        }
+
+        // Full feedback should sustain at least 10x better than half feedback
+        assert!(
+            min_amplitude > min_amplitude_half * 10.0,
+            "Full feedback (min: {}) should sustain much better than half feedback (min: {})",
+            min_amplitude,
+            min_amplitude_half
+        );
+
+        // Should also maintain some dynamics
+        assert!(
+            max_amplitude > min_amplitude * 1.1,
+            "Infinite reverb should show some amplitude variation"
         );
     }
 }

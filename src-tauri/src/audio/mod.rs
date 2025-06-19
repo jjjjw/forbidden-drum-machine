@@ -18,6 +18,10 @@ pub trait AudioProcessor {
     fn process(&mut self, input: f32) -> f32;
 }
 
+pub trait StereoAudioProcessor {
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32);
+}
+
 pub fn sec_to_samples(seconds: f32) -> f32 {
     seconds * SAMPLE_RATE
 }
