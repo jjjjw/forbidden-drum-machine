@@ -207,7 +207,8 @@ impl AllpassComb {
         }
     }
 
-    pub fn set_delay_samples(&mut self, delay_samples: usize) {
+    pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
+        let delay_samples = sec_to_samples(delay_seconds) as usize;
         self.delay_samples = delay_samples.min(self.input_buffer.len() - 1);
     }
 
@@ -277,10 +278,6 @@ impl DelayLine {
         self.lowpass.set_cutoff_frequency(freq);
     }
 
-    pub fn set_delay_samples(&mut self, delay_samples: f32) {
-        self.delay_samples = delay_samples;
-    }
-
     pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
         self.delay_samples = sec_to_samples(delay_seconds);
     }
@@ -335,9 +332,9 @@ fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
     temp[5] = signals[4] - signals[5];
     temp[6] = signals[6] + signals[7];
     temp[7] = signals[6] - signals[7];
-    
+
     *signals = temp;
-    
+
     // Normalize by 1/sqrt(8) for energy conservation
     let scale = 1.0 / (8.0f32).sqrt();
     for i in 0..8 {
@@ -377,7 +374,6 @@ pub struct FDNReverb {
 
 impl FDNReverb {
     pub fn new() -> Self {
-
         let delay_lines = [
             DelayBuffer::new(4096),
             DelayBuffer::new(4096),
@@ -501,45 +497,45 @@ impl StereoAudioProcessor for FDNReverb {
         let bit_reduced_left = self.apply_bit_reduction(downsampled_left);
         let bit_reduced_right = self.apply_bit_reduction(downsampled_right);
 
-        // Read current delay line outputs for FDN feedback matrix
+        // Step 1: Read current delay line outputs
         let mut delay_outputs = [0.0f32; 8];
         for i in 0..8 {
             let delay_samples = sec_to_samples(self.delay_times[i]);
             delay_outputs[i] = self.delay_lines[i].read(delay_samples);
-
-            // Apply feedback filtering to each delay line output
-            delay_outputs[i] = self.feedback_lowpass[i]
-                .process(self.feedback_highpass[i].process(delay_outputs[i]));
         }
 
-        // Apply fast Hadamard transform for FDN mixing
-        let mut fdn_inputs = delay_outputs.clone();
-        fast_hadamard_transform_8(&mut fdn_inputs);
-        
-        // Apply feedback gain
+        // Step 2: Apply FDN matrix (Hadamard transform) to scramble delay outputs
+        let mut fdn_mixed = delay_outputs;
+        fast_hadamard_transform_8(&mut fdn_mixed);
+
+        // Step 3: Filter the FDN outputs
+        let mut filtered_fdn = [0.0f32; 8];
         for i in 0..8 {
-            fdn_inputs[i] *= self.feedback_gain;
+            filtered_fdn[i] =
+                self.feedback_lowpass[i].process(self.feedback_highpass[i].process(fdn_mixed[i]));
         }
 
-        // Add stereo input to delay lines with full gain for better audibility
-        fdn_inputs[0] += bit_reduced_left;
-        fdn_inputs[1] += bit_reduced_left;
-        fdn_inputs[2] += bit_reduced_left;
-        fdn_inputs[3] += bit_reduced_left;
-
-        fdn_inputs[4] += bit_reduced_right;
-        fdn_inputs[5] += bit_reduced_right;
-        fdn_inputs[6] += bit_reduced_right;
-        fdn_inputs[7] += bit_reduced_right;
-
-        // Write new inputs to delay lines
+        // Step 4: Scale by feedback gain
         for i in 0..8 {
-            self.delay_lines[i].write(fdn_inputs[i]);
+            filtered_fdn[i] *= self.feedback_gain;
         }
 
-        // Create stereo output by mixing delay line outputs with higher gain
-        let out_left = (delay_outputs[0] + delay_outputs[2] + delay_outputs[4] + delay_outputs[6]) * 0.5;
-        let out_right = (delay_outputs[1] + delay_outputs[3] + delay_outputs[5] + delay_outputs[7]) * 0.5;
+        // Step 5: Distribute input to delay lines and add feedback
+        let mut delay_inputs = filtered_fdn;
+        // Add stereo input to first 4 delay lines (left) and last 4 (right)
+        for i in 0..4 {
+            delay_inputs[i] += bit_reduced_left;
+            delay_inputs[i + 4] += bit_reduced_right;
+        }
+
+        // Step 6: Write new inputs to delay lines
+        for i in 0..8 {
+            self.delay_lines[i].write(delay_inputs[i]);
+        }
+
+        // Step 7: Output - use FDN outputs as stereo
+        let out_left = filtered_fdn[0] + filtered_fdn[2] + filtered_fdn[4] + filtered_fdn[6] * 0.5;
+        let out_right = filtered_fdn[1] + filtered_fdn[3] + filtered_fdn[5] + filtered_fdn[7] * 0.5;
 
         (out_left, out_right)
     }
@@ -552,7 +548,7 @@ mod tests {
     #[test]
     fn test_delay_line_basic_operation() {
         let mut delay = DelayLine::new(1000);
-        delay.set_delay_samples(100.0);
+        delay.set_delay_seconds(100.0 / sec_to_samples(1.0));
         delay.set_feedback(0.0);
 
         // Test silence with no input
@@ -580,10 +576,10 @@ mod tests {
     #[test]
     fn test_delay_line_feedback_stability() {
         let mut delay = DelayLine::new(1000);
-        let delay_samples = 100.0;
+        let delay_seconds = 100.0 / sec_to_samples(1.0);
         let feedback = 0.4;
 
-        delay.set_delay_samples(delay_samples);
+        delay.set_delay_seconds(delay_seconds);
         delay.set_feedback(feedback);
 
         // Send an impulse
