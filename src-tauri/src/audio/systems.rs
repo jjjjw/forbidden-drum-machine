@@ -140,7 +140,7 @@ impl DrumMachine {
 
         // Apply modulated parameters
         self.reverb.set_size(modulated_reverb_size);
-        self.reverb.set_decay(modulated_reverb_decay);
+        self.reverb.set_feedback(modulated_reverb_decay);
 
         // Generate dry drum samples
         let kick_sample = self.kick.next_sample();
@@ -203,7 +203,13 @@ impl DrumMachine {
     }
 
     pub fn set_reverb_decay(&mut self, decay: f32) {
-        self.reverb.set_decay(decay);
+        self.reverb.set_feedback(decay);
+    }
+
+    pub fn set_reverb_wet_mix(&mut self, wet: f32) {
+        // Mix is handled at the system level as a send effect
+        // This method is kept for API compatibility but doesn't do anything
+        let _ = wet; // Suppress unused parameter warning
     }
 
     pub fn set_reverb_highpass(&mut self, freq: f32) {
