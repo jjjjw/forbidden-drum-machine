@@ -263,7 +263,6 @@ const BASE_DELAYS: [f32; 8] = [0.046, 0.074, 0.082, 0.106, 0.134, 0.142, 0.158, 
 // TODO: Implement modulation
 pub struct Diffuser {
     allpass_filters: [Allpass; 5],
-    modulators: [SampleAndHold; 5],
 }
 
 impl Diffuser {
@@ -276,7 +275,6 @@ impl Diffuser {
             Allpass::new(1024),
         ];
 
-        // Set delay times similar to Romb's pre_diffuse function with variation
         allpass_filters[0].set_delay_seconds(base_delay * 2.0);
         allpass_filters[1].set_delay_seconds(base_delay * 3.0);
         allpass_filters[2].set_delay_seconds(base_delay * 5.0);
@@ -288,18 +286,7 @@ impl Diffuser {
             filter.set_feedback(0.3);
         }
 
-        let modulators = [
-            SampleAndHold::new(1.07, -10.0, 10.0, 50.0),
-            SampleAndHold::new(1.0, -10.0, 10.0, 50.0),
-            SampleAndHold::new(2.0, -10.0, 10.0, 50.0),
-            SampleAndHold::new(1.5, -10.0, 10.0, 50.0),
-            SampleAndHold::new(0.5, -10.0, 10.0, 50.0),
-        ];
-
-        Self {
-            allpass_filters,
-            modulators,
-        }
+        Self { allpass_filters }
     }
 }
 
@@ -327,14 +314,10 @@ pub struct FDNReverb {
     delay_lines: [DelayBuffer; 8],
     base_delays_samples: [usize; 8],
 
-    // Modulation for delay lines
-    modulators: [SampleAndHold; 8],
-
     // Gain control
     feedback: f32,
 
     size: f32,
-    modulation_depth: f32,
 }
 
 impl FDNReverb {
@@ -348,17 +331,6 @@ impl FDNReverb {
             DelayBuffer::new(4096),
             DelayBuffer::new(4096),
             DelayBuffer::new(4096),
-        ];
-
-        let modulators = [
-            SampleAndHold::new(0.91, -10.0, 10.0, 100.0),
-            SampleAndHold::new(1.13, -9.0, 9.0, 110.0),
-            SampleAndHold::new(1.07, -8.0, 8.0, 120.0),
-            SampleAndHold::new(0.83, -11.0, 11.0, 90.0),
-            SampleAndHold::new(1.21, -7.0, 7.0, 130.0),
-            SampleAndHold::new(0.97, -9.5, 9.5, 105.0),
-            SampleAndHold::new(1.03, -8.5, 8.5, 115.0),
-            SampleAndHold::new(0.89, -10.5, 10.5, 95.0),
         ];
 
         let mut base_delays_samples = [0usize; 8];
@@ -375,10 +347,8 @@ impl FDNReverb {
             right_diffuser: Diffuser::new(base_diffusion_delay),
             delay_lines,
             base_delays_samples,
-            modulators,
             feedback: 0.9,
             size: 1.0,
-            modulation_depth: 1.0,
         }
     }
 
@@ -391,10 +361,6 @@ impl FDNReverb {
         for i in 0..8 {
             self.base_delays_samples[i] = (sec_to_samples(BASE_DELAYS[i]) * self.size) as usize;
         }
-    }
-
-    pub fn set_modulation_depth(&mut self, depth: f32) {
-        self.modulation_depth = depth.clamp(0.0, 2.0);
     }
 }
 
@@ -411,13 +377,7 @@ impl StereoAudioProcessor for FDNReverb {
         // Read current delay line outputs with modulation
         let mut delay_outputs = [0.0f32; 8];
         for i in 0..8 {
-            // Get modulation value and calculate modulated delay time
-            let modulation = self.modulators[i].next_sample() * self.modulation_depth;
-            let modulated_delay =
-                (self.base_delays_samples[i] as f32 + modulation).max(1.0) as usize;
-            let clamped_delay = modulated_delay.min(self.delay_lines[i].len() - 1);
-
-            delay_outputs[i] = self.delay_lines[i].read(clamped_delay);
+            delay_outputs[i] = self.delay_lines[i].read(self.base_delays_samples[i]);
         }
 
         // Mix delay outputs signals using Hadamard transform
