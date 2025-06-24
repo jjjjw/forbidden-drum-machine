@@ -1,120 +1,6 @@
+use crate::audio::filters::{FilterMode, OnePoleFilter, OnePoleMode, SVF};
 use crate::audio::modulators::SampleAndHold;
 use crate::audio::{sec_to_samples, AudioProcessor, StereoAudioProcessor, PI, SAMPLE_RATE};
-
-// Tan approximation function
-fn tan_a(x: f32) -> f32 {
-    let x2 = x * x;
-    x * (0.999999492001 + x2 * -0.096524608111)
-        / (1.0 + x2 * (-0.429867256894 + x2 * 0.009981877999))
-}
-
-#[derive(Clone, Copy)]
-pub enum FilterMode {
-    Lowpass,
-    Highpass,
-    Bandpass,
-}
-
-// SVF implementation matching Emilie Gillet's stmlib version
-pub struct SVF {
-    // State variables
-    y0: f32,
-    y1: f32,
-
-    // Filter outputs
-    lp: f32,
-    hp: f32,
-    bp: f32,
-
-    // Filter parameters
-    mode: FilterMode,
-    cf: f32, // Cutoff frequency
-    q: f32,  // Resonance
-
-    // Precomputed coefficients
-    g: f32,
-    r: f32,
-    h: f32,
-    rpg: f32,
-
-    coeffs_dirty: bool,
-}
-
-impl SVF {
-    pub fn new(cf: f32, q: f32, mode: FilterMode) -> Self {
-        let mut svf = Self {
-            y0: 0.0,
-            y1: 0.0,
-            lp: 0.0,
-            hp: 0.0,
-            bp: 0.0,
-            mode,
-            cf,
-            q,
-            g: 0.0,
-            r: 0.0,
-            h: 0.0,
-            rpg: 0.0,
-            coeffs_dirty: true,
-        };
-        svf.update_coefficients();
-        svf
-    }
-
-    fn update_coefficients(&mut self) {
-        if self.coeffs_dirty {
-            self.g = tan_a(self.cf * PI / SAMPLE_RATE);
-            self.r = 1.0 / self.q;
-            self.h = 1.0 / (1.0 + self.r * self.g + self.g * self.g);
-            self.rpg = self.r + self.g;
-            self.coeffs_dirty = false;
-        }
-    }
-
-    pub fn set_cutoff_frequency(&mut self, cf: f32) {
-        if (self.cf - cf).abs() > f32::EPSILON {
-            self.cf = cf;
-            self.coeffs_dirty = true;
-        }
-    }
-
-    pub fn set_resonance(&mut self, q: f32) {
-        if (self.q - q).abs() > f32::EPSILON {
-            self.q = q;
-            self.coeffs_dirty = true;
-        }
-    }
-
-    pub fn set_mode(&mut self, mode: FilterMode) {
-        self.mode = mode;
-    }
-
-    pub fn reset(&mut self) {
-        self.y0 = 0.0;
-        self.y1 = 0.0;
-        self.lp = 0.0;
-        self.hp = 0.0;
-        self.bp = 0.0;
-    }
-}
-
-impl AudioProcessor for SVF {
-    fn process(&mut self, input: f32) -> f32 {
-        self.update_coefficients();
-
-        self.hp = (input - self.rpg * self.y0 - self.y1) * self.h;
-        self.bp = self.g * self.hp + self.y0;
-        self.y0 = self.g * self.hp + self.bp;
-        self.lp = self.g * self.bp + self.y1;
-        self.y1 = self.g * self.bp + self.lp;
-
-        match self.mode {
-            FilterMode::Lowpass => self.lp,
-            FilterMode::Highpass => self.hp,
-            FilterMode::Bandpass => self.bp,
-        }
-    }
-}
 
 // Delay line structure for allpass filter
 pub struct FractionalDelayBuffer {
@@ -276,8 +162,8 @@ impl AudioProcessor for AllpassComb {
 pub struct DelayLine {
     buffer: DelayBuffer,
     frozen: bool,
-    highpass: SVF,
-    lowpass: SVF,
+    highpass: OnePoleFilter,
+    lowpass: OnePoleFilter,
     delay_samples: usize,
     feedback: f32,
 }
@@ -287,8 +173,8 @@ impl DelayLine {
         Self {
             buffer: DelayBuffer::new(max_delay_samples),
             frozen: false,
-            highpass: SVF::new(200.0, 0.5, FilterMode::Highpass),
-            lowpass: SVF::new(8000.0, 0.5, FilterMode::Lowpass),
+            highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass),
+            lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass),
             delay_samples: 0,
             feedback: 0.0,
         }
@@ -430,8 +316,8 @@ impl AudioProcessor for Diffuser {
 }
 
 pub struct FDNReverb {
-    input_highcut: SVF,
-    input_lowcut: SVF,
+    input_highcut: OnePoleFilter,
+    input_lowcut: OnePoleFilter,
 
     // Diffusion for each channel
     left_diffuser: Diffuser,
@@ -483,8 +369,8 @@ impl FDNReverb {
         let base_diffusion_delay = 0.001;
 
         Self {
-            input_highcut: SVF::new(10000.0, 0.5, FilterMode::Lowpass),
-            input_lowcut: SVF::new(200.0, 0.5, FilterMode::Highpass),
+            input_highcut: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass),
+            input_lowcut: OnePoleFilter::new(200.0, OnePoleMode::Highpass),
             left_diffuser: Diffuser::new(base_diffusion_delay),
             right_diffuser: Diffuser::new(base_diffusion_delay),
             delay_lines,
@@ -694,8 +580,8 @@ mod tests {
         assert!(max_amp_r < 1.0, "FDNReverb right should remain stable");
 
         // Should produce reverb tail
-        let has_tail_l = outputs_l.iter().any(|&x| x.abs() > 0.2);
-        let has_tail_r = outputs_r.iter().any(|&x| x.abs() > 0.2);
+        let has_tail_l = outputs_l.iter().any(|&x| x.abs() > 0.1);
+        let has_tail_r = outputs_r.iter().any(|&x| x.abs() > 0.1);
         assert!(has_tail_l, "FDNReverb should produce left reverb tail");
         assert!(has_tail_r, "FDNReverb should produce right reverb tail");
     }

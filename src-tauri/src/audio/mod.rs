@@ -1,5 +1,6 @@
 pub mod effects;
 pub mod envelopes;
+pub mod filters;
 pub mod instruments;
 pub mod modulators;
 pub mod oscillators;
