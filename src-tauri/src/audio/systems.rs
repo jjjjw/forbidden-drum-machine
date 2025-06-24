@@ -106,7 +106,7 @@ impl DrumMachine {
 
             // Initialize modulators with slower rates and configurable slew
             delay_time_mod: SampleAndHold::new(0.125, 0.1, 0.5, 150.0), // 8 sec updates, 150ms slew
-            reverb_size_mod: SampleAndHold::new(0.165, 0.1, 0.3, 200.0), // 6 sec updates, 200ms slew
+            reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0), // 6 sec updates, 200ms slew
             reverb_decay_mod: SampleAndHold::new(0.1, 0.3, 0.7, 100.0), // 10 sec updates, 100ms slew
         }
     }
@@ -140,7 +140,7 @@ impl DrumMachine {
 
         // Apply modulated parameters
         self.reverb.set_size(modulated_reverb_size);
-        self.reverb.set_feedback(modulated_reverb_decay);
+        self.reverb.set_feedback(0.95);
 
         // Generate dry drum samples
         let kick_sample = self.kick.next_sample();
@@ -153,7 +153,7 @@ impl DrumMachine {
 
         // Process through effects with modulated delay time
         self.delay.set_delay_seconds(modulated_delay_time);
-        self.delay.set_feedback(0.4);
+        self.delay.set_feedback(0.9);
         let delay_output = self.delay.process(delay_input);
         let (reverb_output_l, reverb_output_r) =
             self.reverb.process_stereo(reverb_input, reverb_input);
@@ -268,7 +268,7 @@ mod tests {
             let (left, right) = drum_machine.next_sample();
 
             // Track maximum amplitude
-            let amplitude = (left.abs().max(right.abs()));
+            let amplitude = left.abs().max(right.abs());
             if amplitude > max_amplitude {
                 max_amplitude = amplitude;
             }

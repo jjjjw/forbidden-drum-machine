@@ -20,6 +20,7 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
+#[allow(static_mut_refs)]
 fn start_audio() -> Result<String, String> {
     unsafe {
         if AUDIO_OUTPUT.is_some() {
@@ -38,6 +39,7 @@ fn start_audio() -> Result<String, String> {
 }
 
 #[tauri::command]
+#[allow(static_mut_refs)]
 fn stop_audio() -> Result<String, String> {
     unsafe {
         if AUDIO_OUTPUT.is_some() {
