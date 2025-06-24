@@ -1,3 +1,4 @@
+use crate::audio::modulators::SampleAndHold;
 use crate::audio::{sec_to_samples, AudioProcessor, StereoAudioProcessor, PI, SAMPLE_RATE};
 
 // Tan approximation function
@@ -63,7 +64,7 @@ impl SVF {
     fn update_coefficients(&mut self) {
         if self.coeffs_dirty {
             self.g = tan_a(self.cf * PI / SAMPLE_RATE);
-            self.r = 1.0 / self.q.max(0.001); // Prevent division by zero
+            self.r = 1.0 / self.q;
             self.h = 1.0 / (1.0 + self.r * self.g + self.g * self.g);
             self.rpg = self.r + self.g;
             self.coeffs_dirty = false;
@@ -372,22 +373,82 @@ fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
 // Base delay times for FDN to avoid resonances (in seconds)
 const BASE_DELAYS: [f32; 8] = [0.046, 0.074, 0.082, 0.106, 0.134, 0.142, 0.158, 0.166];
 
+// Diffusion chain using cascaded allpass filters
+// TODO: Implement modulation
+pub struct Diffuser {
+    allpass_filters: [Allpass; 5],
+    modulators: [SampleAndHold; 5],
+}
+
+impl Diffuser {
+    pub fn new(base_delay: f32) -> Self {
+        let mut allpass_filters = [
+            Allpass::new(1024),
+            Allpass::new(1024),
+            Allpass::new(1024),
+            Allpass::new(1024),
+            Allpass::new(1024),
+        ];
+
+        // Set delay times similar to Romb's pre_diffuse function with variation
+        allpass_filters[0].set_delay_seconds(base_delay * 2.0);
+        allpass_filters[1].set_delay_seconds(base_delay * 3.0);
+        allpass_filters[2].set_delay_seconds(base_delay * 5.0);
+        allpass_filters[3].set_delay_seconds(base_delay * 7.0);
+        allpass_filters[4].set_delay_seconds(base_delay * 11.0);
+
+        // Set feedback gains
+        for filter in &mut allpass_filters {
+            filter.set_feedback(0.3);
+        }
+
+        let modulators = [
+            SampleAndHold::new(1.07, -10.0, 10.0, 50.0),
+            SampleAndHold::new(1.0, -10.0, 10.0, 50.0),
+            SampleAndHold::new(2.0, -10.0, 10.0, 50.0),
+            SampleAndHold::new(1.5, -10.0, 10.0, 50.0),
+            SampleAndHold::new(0.5, -10.0, 10.0, 50.0),
+        ];
+
+        Self {
+            allpass_filters,
+            modulators,
+        }
+    }
+}
+
+impl AudioProcessor for Diffuser {
+    fn process(&mut self, input: f32) -> f32 {
+        // Chain through allpass filters
+        let mut output = input;
+        for filter in &mut self.allpass_filters {
+            output = filter.process(output);
+        }
+
+        output
+    }
+}
+
 pub struct FDNReverb {
     input_highcut: SVF,
     input_lowcut: SVF,
 
+    // Diffusion for each channel
+    left_diffuser: Diffuser,
+    right_diffuser: Diffuser,
+
     // 8 delay lines for FDN
     delay_lines: [DelayBuffer; 8],
-    delays_samples: [usize; 8],
+    base_delays_samples: [usize; 8],
 
-    // Feedback filters for each delay line
-    feedback_highpass: [SVF; 8],
-    feedback_lowpass: [SVF; 8],
+    // Modulation for delay lines
+    modulators: [SampleAndHold; 8],
 
     // Gain control
     feedback: f32,
 
     size: f32,
+    modulation_depth: f32,
 }
 
 impl FDNReverb {
@@ -403,42 +464,35 @@ impl FDNReverb {
             DelayBuffer::new(4096),
         ];
 
-        let feedback_highpass = [
-            SVF::new(200.0, 0.0, FilterMode::Highpass),
-            SVF::new(180.0, 0.0, FilterMode::Highpass),
-            SVF::new(220.0, 0.0, FilterMode::Highpass),
-            SVF::new(160.0, 0.0, FilterMode::Highpass),
-            SVF::new(240.0, 0.0, FilterMode::Highpass),
-            SVF::new(190.0, 0.0, FilterMode::Highpass),
-            SVF::new(210.0, 0.0, FilterMode::Highpass),
-            SVF::new(170.0, 0.0, FilterMode::Highpass),
+        let modulators = [
+            SampleAndHold::new(0.91, -10.0, 10.0, 100.0),
+            SampleAndHold::new(1.13, -9.0, 9.0, 110.0),
+            SampleAndHold::new(1.07, -8.0, 8.0, 120.0),
+            SampleAndHold::new(0.83, -11.0, 11.0, 90.0),
+            SampleAndHold::new(1.21, -7.0, 7.0, 130.0),
+            SampleAndHold::new(0.97, -9.5, 9.5, 105.0),
+            SampleAndHold::new(1.03, -8.5, 8.5, 115.0),
+            SampleAndHold::new(0.89, -10.5, 10.5, 95.0),
         ];
 
-        let feedback_lowpass = [
-            SVF::new(8000.0, 0.0, FilterMode::Lowpass),
-            SVF::new(7500.0, 0.0, FilterMode::Lowpass),
-            SVF::new(8500.0, 0.0, FilterMode::Lowpass),
-            SVF::new(7000.0, 0.0, FilterMode::Lowpass),
-            SVF::new(9000.0, 0.0, FilterMode::Lowpass),
-            SVF::new(7800.0, 0.0, FilterMode::Lowpass),
-            SVF::new(8200.0, 0.0, FilterMode::Lowpass),
-            SVF::new(7200.0, 0.0, FilterMode::Lowpass),
-        ];
-
-        let mut delays_samples = [0usize; 8];
+        let mut base_delays_samples = [0usize; 8];
         for i in 0..8 {
-            delays_samples[i] = sec_to_samples(BASE_DELAYS[i]) as usize;
+            base_delays_samples[i] = sec_to_samples(BASE_DELAYS[i]) as usize;
         }
 
+        let base_diffusion_delay = 0.001;
+
         Self {
-            input_highcut: SVF::new(10000.0, 0.0, FilterMode::Lowpass),
-            input_lowcut: SVF::new(100.0, 0.0, FilterMode::Highpass),
+            input_highcut: SVF::new(10000.0, 0.5, FilterMode::Lowpass),
+            input_lowcut: SVF::new(200.0, 0.5, FilterMode::Highpass),
+            left_diffuser: Diffuser::new(base_diffusion_delay),
+            right_diffuser: Diffuser::new(base_diffusion_delay),
             delay_lines,
-            delays_samples: delays_samples,
-            feedback_highpass,
-            feedback_lowpass,
+            base_delays_samples,
+            modulators,
             feedback: 0.9,
             size: 1.0,
+            modulation_depth: 1.0,
         }
     }
 
@@ -449,72 +503,43 @@ impl FDNReverb {
     pub fn set_size(&mut self, size: f32) {
         self.size = size.clamp(0.1, 2.0);
         for i in 0..8 {
-            self.delays_samples[i] = (sec_to_samples(BASE_DELAYS[i]) * self.size) as usize;
+            self.base_delays_samples[i] = (sec_to_samples(BASE_DELAYS[i]) * self.size) as usize;
         }
     }
 
-    pub fn set_feedback_highpass(&mut self, freq: f32) {
-        for hp in &mut self.feedback_highpass {
-            hp.set_cutoff_frequency(freq);
-        }
-    }
-
-    pub fn set_feedback_lowpass(&mut self, freq: f32) {
-        for lp in &mut self.feedback_lowpass {
-            lp.set_cutoff_frequency(freq);
-        }
+    pub fn set_modulation_depth(&mut self, depth: f32) {
+        self.modulation_depth = depth.clamp(0.0, 2.0);
     }
 }
-
-// const DIFFUSOR_BASE_DELAYS: [f32; 8] = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008];
-
-// struct Diffusor {
-//     allpass_filters: [Allpass; 8],
-// }
-
-// impl Diffusor {
-//     pub fn new(sample_rate: f32) -> Self {
-//         let mut allpass_filters = [Allpass::new(sample_rate); 8];
-//         for i in 0..8 {
-//             allpass_filters[i].set_delay_time(DIFFUSOR_BASE_DELAYS[i]);
-//         }
-//         Self { allpass_filters }
-//     }
-
-//     pub fn process(&mut self, input: f32) -> f32 {
-//         let mut output = input;
-//         for filter in &mut self.allpass_filters {
-//             output = filter.process(output);
-//         }
-//         output
-//     }
-// }
 
 impl StereoAudioProcessor for FDNReverb {
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         // Input filtering
-        // let filtered_left = self.input_lowcut.process(self.input_highcut.process(left));
-        // let filtered_right = self.input_lowcut.process(self.input_highcut.process(right));
+        let filtered_left = self.input_lowcut.process(self.input_highcut.process(left));
+        let filtered_right = self.input_lowcut.process(self.input_highcut.process(right));
 
-        // Read current delay line outputs
+        // Diffusion stage
+        let diffused_left = self.left_diffuser.process(filtered_left);
+        let diffused_right = self.right_diffuser.process(filtered_right);
+
+        // Read current delay line outputs with modulation
         let mut delay_outputs = [0.0f32; 8];
         for i in 0..8 {
-            delay_outputs[i] = self.delay_lines[i].read(self.delays_samples[i]);
+            // Get modulation value and calculate modulated delay time
+            let modulation = self.modulators[i].next_sample() * self.modulation_depth;
+            let modulated_delay =
+                (self.base_delays_samples[i] as f32 + modulation).max(1.0) as usize;
+            let clamped_delay = modulated_delay.min(self.delay_lines[i].len() - 1);
+
+            delay_outputs[i] = self.delay_lines[i].read(clamped_delay);
         }
 
         // Mix delay outputs signals using Hadamard transform
         fast_hadamard_transform_8(&mut delay_outputs);
 
-        // Filter the FDN outputs
-        // let mut filtered_fdn = [0.0f32; 8];
-        // for i in 0..8 {
-        //     filtered_fdn[i] = self.feedback_lowpass[i]
-        //         .process(self.feedback_highpass[i].process(delay_outputs[i]));
-        // }
-
-        // Write the mixed outputs to the delay lines + apply feedback + add the input
-        let scaled_left = left * 0.25;
-        let scaled_right = right * 0.25;
+        // Write the mixed outputs to the delay lines + apply feedback + add the diffused input
+        let scaled_left = diffused_left * 0.25;
+        let scaled_right = diffused_right * 0.25;
         for i in 0..8 {
             // Apply feedback to mixed outputs (this is the cross-coupling)
             let feedback_output = delay_outputs[i] * self.feedback;

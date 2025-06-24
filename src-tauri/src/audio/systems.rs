@@ -206,20 +206,6 @@ impl DrumMachine {
         self.reverb.set_feedback(decay);
     }
 
-    pub fn set_reverb_wet_mix(&mut self, wet: f32) {
-        // Mix is handled at the system level as a send effect
-        // This method is kept for API compatibility but doesn't do anything
-        let _ = wet; // Suppress unused parameter warning
-    }
-
-    pub fn set_reverb_highpass(&mut self, freq: f32) {
-        self.reverb.set_feedback_highpass(freq);
-    }
-
-    pub fn set_reverb_lowpass(&mut self, freq: f32) {
-        self.reverb.set_feedback_lowpass(freq);
-    }
-
     // Modulator value getters
     pub fn get_current_delay_time(&self) -> f32 {
         self.delay_time_mod.get_current_value()
