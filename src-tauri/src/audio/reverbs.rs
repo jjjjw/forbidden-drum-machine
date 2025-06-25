@@ -3,37 +3,61 @@ use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 
-// Fast Hadamard Transform for 4x4 FDN
-fn fast_hadamard_transform_4(signals: &mut [f32; 4]) {
-    // Stage 1: 4 -> 2 blocks
-    let mut temp = [0.0f32; 4];
-    for i in 0..2 {
-        temp[i] = signals[i] + signals[i + 2];
-        temp[i + 2] = signals[i] - signals[i + 2];
+// Fast Hadamard Transform for 16x16 FDN
+fn fast_hadamard_transform_16(signals: &mut [f32; 16]) {
+    // Stage 1: 16 -> 8 blocks
+    let mut temp = [0.0f32; 16];
+    for i in 0..8 {
+        temp[i] = signals[i] + signals[i + 8];
+        temp[i + 8] = signals[i] - signals[i + 8];
     }
     *signals = temp;
 
-    // Stage 2: 2 -> 1 blocks
-    temp[0] = signals[0] + signals[1];
-    temp[1] = signals[0] - signals[1];
-    temp[2] = signals[2] + signals[3];
-    temp[3] = signals[2] - signals[3];
+    // Stage 2: 8 -> 4 blocks
+    for i in 0..4 {
+        temp[i] = signals[i] + signals[i + 4];
+        temp[i + 4] = signals[i] - signals[i + 4];
+        temp[i + 8] = signals[i + 8] + signals[i + 12];
+        temp[i + 12] = signals[i + 8] - signals[i + 12];
+    }
     *signals = temp;
 
-    // Normalize by 1/sqrt(4) for energy conservation
-    let scale = 1.0 / (4.0f32).sqrt();
-    for i in 0..4 {
+    // Stage 3: 4 -> 2 blocks
+    for i in 0..2 {
+        temp[i] = signals[i] + signals[i + 2];
+        temp[i + 2] = signals[i] - signals[i + 2];
+        temp[i + 4] = signals[i + 4] + signals[i + 6];
+        temp[i + 6] = signals[i + 4] - signals[i + 6];
+        temp[i + 8] = signals[i + 8] + signals[i + 10];
+        temp[i + 10] = signals[i + 8] - signals[i + 10];
+        temp[i + 12] = signals[i + 12] + signals[i + 14];
+        temp[i + 14] = signals[i + 12] - signals[i + 14];
+    }
+    *signals = temp;
+
+    // Stage 4: 2 -> 1 blocks
+    for i in 0..8 {
+        let base = i * 2;
+        temp[base] = signals[base] + signals[base + 1];
+        temp[base + 1] = signals[base] - signals[base + 1];
+    }
+    *signals = temp;
+
+    // Normalize by 1/sqrt(16) for energy conservation
+    let scale = 1.0 / (16.0f32).sqrt();
+    for i in 0..16 {
         signals[i] *= scale;
     }
 }
 
-// Base delay multipliers for diffusion
-// Base delay multipliers for feedback
-const FEEDBACK_DELAYS: [f32; 4] = [1.0, 1.3, 1.5, 1.7];
+// Base delay multipliers for 16-delay feedback
+const FEEDBACK_DELAYS: [f32; 16] = [
+    1.0, 1.3, 1.7, 2.3, 2.9, 3.7, 4.3, 5.3, 6.1, 7.3, 8.9, 10.7, 12.3, 14.9, 17.9, 21.1,
+];
 
 pub struct FeedbackStage {
     base_delay: f32,
-    delay_lines: [DelayLine; 4],
+    delay_lines: [DelayLine; 16],
     lfos: [SineOscillator; 4],
     feedback: f32,
     modulation_depth: f32,
@@ -43,18 +67,28 @@ pub struct FeedbackStage {
 impl FeedbackStage {
     pub fn new(base_delay_ms: f32, sample_rate: f32) -> Self {
         let base_delay = base_delay_ms / 1000.0; // Convert ms to seconds
-        let mut delay_lines = [
+
+        // Create 16 delay lines with different delay times
+        let delay_lines = [
             DelayLine::new(FEEDBACK_DELAYS[0] * base_delay * 2.0, sample_rate),
             DelayLine::new(FEEDBACK_DELAYS[1] * base_delay * 2.0, sample_rate),
             DelayLine::new(FEEDBACK_DELAYS[2] * base_delay * 2.0, sample_rate),
             DelayLine::new(FEEDBACK_DELAYS[3] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[4] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[5] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[6] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[7] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[8] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[9] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[10] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[11] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[12] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[13] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[14] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[15] * base_delay * 2.0, sample_rate),
         ];
 
-        for i in 0..4 {
-            delay_lines[i].set_feedback(0.5);
-            delay_lines[i].set_delay_seconds(FEEDBACK_DELAYS[i] * base_delay);
-        }
-
+        // Create 4 LFOs with different frequencies
         let lfos = [
             SineOscillator::new(0.19, sample_rate),
             SineOscillator::new(0.37, sample_rate),
@@ -74,7 +108,7 @@ impl FeedbackStage {
 
     pub fn set_feedback(&mut self, feedback: f32) {
         self.feedback = feedback.clamp(0.0, 1.0);
-        for i in 0..4 {
+        for i in 0..16 {
             self.delay_lines[i].set_feedback(self.feedback);
         }
     }
@@ -93,10 +127,18 @@ impl FeedbackStage {
         }
     }
 
-    pub fn process(&mut self, diffusion: [f32; 4]) -> [f32; 4] {
-        // Apply LFO modulation to delay times
-        for i in 0..4 {
-            let lfo_value = self.lfos[i].next_sample();
+    pub fn process(&mut self, diffusion: [f32; 16]) -> [f32; 16] {
+        // Generate LFO values (4 LFOs shared across 16 delays)
+        let lfo_values = [
+            self.lfos[0].next_sample(),
+            self.lfos[1].next_sample(),
+            self.lfos[2].next_sample(),
+            self.lfos[3].next_sample(),
+        ];
+
+        // Apply LFO modulation to delay times (cycle through the 4 LFOs)
+        for i in 0..16 {
+            let lfo_value = lfo_values[i % 4];
             let modulated_delay = FEEDBACK_DELAYS[i]
                 * self.base_delay
                 * self.size
@@ -105,22 +147,23 @@ impl FeedbackStage {
         }
 
         // Read current echoes from delay lines
-        let mut echoes = [0.0f32; 4];
-        for i in 0..4 {
+        let mut echoes = [0.0f32; 16];
+        for i in 0..16 {
             echoes[i] = self.delay_lines[i].read();
         }
 
         // Apply mixing matrix
-        fast_hadamard_transform_4(&mut echoes);
+        fast_hadamard_transform_16(&mut echoes);
 
         // Write diffusion input to delay lines with echoes feedback
-        for i in 0..4 {
+        for i in 0..16 {
             self.delay_lines[i].write(diffusion[i], echoes[i]);
         }
 
-        // Phase shift the echoes
-        echoes[0] *= -1.0;
-        echoes[1] *= -1.0;
+        // Phase shift some of the echoes for better diffusion
+        for i in 0..8 {
+            echoes[i] *= -1.0;
+        }
 
         echoes
     }
@@ -138,7 +181,7 @@ pub struct FDNReverb {
 
 impl FDNReverb {
     pub fn new(sample_rate: f32) -> Self {
-        let feedback_stage = FeedbackStage::new(50.0, sample_rate); // 50ms base delay
+        let feedback_stage = FeedbackStage::new(10.0, sample_rate); // 10ms base delay
 
         Self {
             input_highcut_left: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass, sample_rate),
@@ -176,12 +219,23 @@ impl StereoAudioProcessor for FDNReverb {
             .input_highcut_right
             .process(self.input_lowcut_right.process(right * 0.5));
 
-        let input = [filtered_left, filtered_right, filtered_left, filtered_right];
+        // Distribute input across 16 channels
+        let mut input = [0.0f32; 16];
+        for i in 0..8 {
+            input[i * 2] = filtered_left;
+            input[i * 2 + 1] = filtered_right;
+        }
 
-        // Use the final diffusion stage output as input to feedback stage
+        // Process through feedback stage
         let echoes = self.feedback_stage.process(input);
-        let out_left = echoes[0] + echoes[2];
-        let out_right = echoes[1] + echoes[3];
+
+        // Mix down to stereo - combine odd/even channels
+        let mut out_left = 0.0;
+        let mut out_right = 0.0;
+        for i in 0..8 {
+            out_left += echoes[i * 2];
+            out_right += echoes[i * 2 + 1];
+        }
 
         (out_left, out_right)
     }
@@ -295,17 +349,16 @@ mod tests {
     }
 
     #[test]
-    fn test_fast_hadamard_transform_4_energy_conservation() {
-        // Test that the energy is conserved when applying the transform
+    fn test_fast_hadamard_transform_16_energy_conservation() {
+        // Test that the energy is conserved when applying the 16x16 transform
         let test_inputs = [
-            [1.0, 2.0, 3.0, 4.0],
-            [0.5, 0.5, 0.5, 0.5],
-            [0.0, 1.0, 2.0, 3.0],
-            [1.0, 0.0, 1.0, 0.0],
-            [1.0, 1.0, 1.0, 1.0],
-            [0.5, 0.5, 0.5, 0.5],
-            [0.0, 0.0, 0.0, 0.0],
-            [1.0, 1.0, 1.0, 1.0],
+            [
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
+            ],
+            [0.5; 16],
+            [
+                1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+            ],
         ];
 
         for test_input in test_inputs.iter() {
@@ -315,7 +368,7 @@ mod tests {
             let input_energy: f32 = signals.iter().map(|x| x * x).sum();
 
             // Apply transform
-            fast_hadamard_transform_4(&mut signals);
+            fast_hadamard_transform_16(&mut signals);
 
             // Calculate output energy
             let output_energy: f32 = signals.iter().map(|x| x * x).sum();
@@ -331,13 +384,15 @@ mod tests {
     }
 
     #[test]
-    fn test_fast_hadamard_transform_4_invertability() {
-        let original = [1.0, 2.0, 3.0, 4.0];
+    fn test_fast_hadamard_transform_16_invertability() {
+        let original = [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+        ];
         let mut signals = original;
 
         // Apply transform twice
-        fast_hadamard_transform_4(&mut signals);
-        fast_hadamard_transform_4(&mut signals);
+        fast_hadamard_transform_16(&mut signals);
+        fast_hadamard_transform_16(&mut signals);
 
         for (i, (&result, &orig)) in signals.iter().zip(original.iter()).enumerate() {
             assert!(
