@@ -1,6 +1,7 @@
 use crate::audio::delays::DelayLine;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
-use crate::audio::{AudioProcessor, StereoAudioProcessor};
+use crate::audio::oscillators::SineOscillator;
+use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 
 // Fast Hadamard Transform for 8x8 FDN
 // This is more efficient than matrix multiplication
@@ -65,122 +66,247 @@ fn fast_hadamard_transform_4(signals: &mut [f32; 4]) {
     }
 }
 
-// Base delay times for FDN to avoid resonances (in seconds)
-const DIFFUSER_DELAYS: [f32; 4] = [0.046, 0.074, 0.082, 0.106];
-const FEEDBACK_DELAYS: [f32; 4] = [0.134, 0.142, 0.158, 0.166];
+// Base delay multipliers for diffusion
+const DIFFUSION_DELAYS: [f32; 4] = [1.0, 1.3, 1.5, 1.7];
 
-// TODO: Implement modulation
-// TODO: Implement velvet diffusion
+// Base delay multipliers for feedback
+const FEEDBACK_DELAYS: [f32; 4] = [1.0, 1.3, 1.5, 1.7];
 
-pub struct FDNReverb {
-    input_highcut: OnePoleFilter,
-    input_lowcut: OnePoleFilter,
-
-    // Delay lines for diffusion chain
-    diffuser_delay_lines: [DelayLine; 4],
-    // Delay lines for feedback chain
-    feedback_delay_lines: [DelayLine; 4],
-
-    size: f32,
+pub struct DiffusionStage {
+    delay_lines: [DelayLine; 4],
+    feedback: f32,
 }
 
-impl FDNReverb {
-    pub fn new() -> Self {
-        let max_diffuser_delay = DIFFUSER_DELAYS.last().unwrap() * 2.0;
-        let mut diffuser_delay_lines = [
-            DelayLine::new(max_diffuser_delay),
-            DelayLine::new(max_diffuser_delay),
-            DelayLine::new(max_diffuser_delay),
-            DelayLine::new(max_diffuser_delay),
-        ];
-        for i in 0..4 {
-            diffuser_delay_lines[i].set_feedback(0.5);
-        }
+impl DiffusionStage {
+    pub fn new(base_delay_ms: f32, feedback: f32) -> Self {
+        let base_delay = base_delay_ms / 1000.0; // Convert ms to seconds
 
-        let max_feedback_delay = FEEDBACK_DELAYS.last().unwrap() * 2.0;
-        let mut feedback_delay_lines = [
-            DelayLine::new(max_feedback_delay),
-            DelayLine::new(max_feedback_delay),
-            DelayLine::new(max_feedback_delay),
-            DelayLine::new(max_feedback_delay),
+        let mut delay_lines = [
+            DelayLine::new(base_delay * DIFFUSION_DELAYS[0]),
+            DelayLine::new(base_delay * DIFFUSION_DELAYS[1]),
+            DelayLine::new(base_delay * DIFFUSION_DELAYS[2]),
+            DelayLine::new(base_delay * DIFFUSION_DELAYS[3]),
         ];
+
         for i in 0..4 {
-            feedback_delay_lines[i].set_feedback(0.5);
+            delay_lines[i].set_feedback(feedback);
+            delay_lines[i].set_delay_seconds(base_delay * DIFFUSION_DELAYS[i]);
         }
 
         Self {
-            input_highcut: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass),
-            input_lowcut: OnePoleFilter::new(200.0, OnePoleMode::Highpass),
-            diffuser_delay_lines,
-            feedback_delay_lines,
+            delay_lines,
+            feedback,
+        }
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(0.0, 1.0);
+        for i in 0..4 {
+            self.delay_lines[i].set_feedback(self.feedback);
+        }
+    }
+
+    pub fn process(&mut self, input_left: f32, input_right: f32) -> [f32; 4] {
+        // Write new inputs to delay lines
+        let mut outputs = [0.0; 4];
+        for i in 0..4 {
+            if i % 2 == 0 {
+                outputs[i] = self.delay_lines[i].process(input_left);
+            } else {
+                outputs[i] = self.delay_lines[i].process(input_right);
+            }
+        }
+
+        // Apply mixing matrix
+        fast_hadamard_transform_4(&mut outputs);
+
+        outputs
+    }
+}
+
+pub struct FeedbackStage {
+    base_delay: f32,
+    delay_lines: [DelayLine; 4],
+    lfos: [SineOscillator; 4],
+    feedback: f32,
+    modulation_depth: f32,
+    size: f32,
+}
+
+impl FeedbackStage {
+    pub fn new(base_delay_ms: f32) -> Self {
+        let base_delay = base_delay_ms / 1000.0; // Convert ms to seconds
+        let max_feedback_delay = FEEDBACK_DELAYS.last().unwrap() * 2.0 * base_delay;
+        let mut delay_lines = [
+            DelayLine::new(max_feedback_delay),
+            DelayLine::new(max_feedback_delay),
+            DelayLine::new(max_feedback_delay),
+            DelayLine::new(max_feedback_delay),
+        ];
+
+        for i in 0..4 {
+            delay_lines[i].set_feedback(0.5);
+            delay_lines[i].set_delay_seconds(FEEDBACK_DELAYS[i] * base_delay);
+        }
+
+        let lfos = [
+            SineOscillator::new(0.19),
+            SineOscillator::new(0.37),
+            SineOscillator::new(0.29),
+            SineOscillator::new(0.41),
+        ];
+
+        Self {
+            base_delay,
+            delay_lines,
+            lfos,
+            feedback: 0.5,
+            modulation_depth: 0.0,
             size: 1.0,
         }
     }
 
     pub fn set_feedback(&mut self, feedback: f32) {
-        let feedback = feedback.clamp(0.0, 1.0); // Allow feedback up to 1.0
+        self.feedback = feedback.clamp(0.0, 1.0);
         for i in 0..4 {
-            self.feedback_delay_lines[i].set_feedback(feedback);
+            self.delay_lines[i].set_feedback(self.feedback);
         }
     }
 
-    pub fn set_diffusion_feedback(&mut self, feedback: f32) {
-        let feedback = feedback.clamp(0.0, 1.0); // Allow feedback up to 1.0
-        for i in 0..4 {
-            self.diffuser_delay_lines[i].set_feedback(feedback);
-        }
+    pub fn set_modulation_depth(&mut self, depth: f32) {
+        self.modulation_depth = depth.clamp(0.0, 1.0);
     }
 
     pub fn set_size(&mut self, size: f32) {
         self.size = size.clamp(0.1, 2.0);
+    }
+
+    pub fn process(&mut self, diffusion: [f32; 4]) -> [f32; 4] {
+        // Apply LFO modulation to delay times
         for i in 0..4 {
-            self.diffuser_delay_lines[i].set_delay_seconds(DIFFUSER_DELAYS[i] * self.size);
-            self.feedback_delay_lines[i].set_delay_seconds(FEEDBACK_DELAYS[i] * self.size);
+            let lfo_value = self.lfos[i].next_sample();
+            let modulated_delay = FEEDBACK_DELAYS[i]
+                * self.base_delay
+                * self.size
+                * (1.0 + lfo_value * self.modulation_depth * 0.1);
+            self.delay_lines[i].set_delay_seconds(modulated_delay);
         }
+
+        // Read current echoes from delay lines
+        let mut echoes = [0.0f32; 4];
+        for i in 0..4 {
+            echoes[i] = self.delay_lines[i].read();
+        }
+
+        // Apply mixing matrix
+        fast_hadamard_transform_4(&mut echoes);
+
+        // Write diffusion input to delay lines with echoes feedback
+        for i in 0..4 {
+            self.delay_lines[i].write(diffusion[i], echoes[i]);
+        }
+
+        echoes
+    }
+}
+
+pub struct FDNReverb {
+    input_highcut_left: OnePoleFilter,
+    input_lowcut_left: OnePoleFilter,
+    input_highcut_right: OnePoleFilter,
+    input_lowcut_right: OnePoleFilter,
+
+    // 4 diffusion stages with progressively longer delays
+    diffusion_stages: [DiffusionStage; 4],
+    // Final feedback stage for late reverberation
+    feedback_stage: FeedbackStage,
+}
+
+impl FDNReverb {
+    pub fn new() -> Self {
+        // Create 4 diffusion stages with progressively longer delays
+        // Stage delays: 10ms, 25ms, 50ms, 75ms
+        let diffusion_stages = [
+            DiffusionStage::new(10.0, 0.1), // 10ms base delay
+            DiffusionStage::new(25.0, 0.1), // 25ms base delay
+            DiffusionStage::new(50.0, 0.1), // 50ms base delay
+            DiffusionStage::new(75.0, 0.1), // 75ms base delay
+        ];
+
+        let feedback_stage = FeedbackStage::new(50.0); // 50ms base delay
+
+        Self {
+            input_highcut_left: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass),
+            input_lowcut_left: OnePoleFilter::new(200.0, OnePoleMode::Highpass),
+            input_highcut_right: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass),
+            input_lowcut_right: OnePoleFilter::new(200.0, OnePoleMode::Highpass),
+            diffusion_stages,
+            feedback_stage,
+        }
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback_stage.set_feedback(feedback);
+    }
+
+    pub fn set_diffusion_feedback(&mut self, feedback: f32) {
+        let feedback = feedback.clamp(0.0, 1.0);
+        for stage in &mut self.diffusion_stages {
+            stage.set_feedback(feedback);
+        }
+    }
+
+    pub fn set_size(&mut self, size: f32) {
+        self.feedback_stage.set_size(size);
+    }
+
+    pub fn set_modulation_depth(&mut self, depth: f32) {
+        self.feedback_stage.set_modulation_depth(depth);
     }
 }
 
 impl StereoAudioProcessor for FDNReverb {
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Input filtering and scaling for diffusion matrix
-        let filtered_left = self.input_lowcut.process(self.input_highcut.process(left)) * 0.5;
-        let filtered_right = self.input_lowcut.process(self.input_highcut.process(right)) * 0.5;
+        // Input filtering and scaling
+        let filtered_left = self
+            .input_highcut_left
+            .process(self.input_lowcut_left.process(left * 0.5));
+        let filtered_right = self
+            .input_highcut_right
+            .process(self.input_lowcut_right.process(right * 0.5));
 
-        // Diffusion stage
-        let mut diffusion = [0.0f32; 4];
-        for i in 0..4 {
-            if i % 2 == 0 {
-                diffusion[i] = self.diffuser_delay_lines[i].process(filtered_left);
-            } else {
-                diffusion[i] = self.diffuser_delay_lines[i].process(filtered_right);
-            }
-        }
+        // Process through diffusion stages sequentially
+        // let mut current_left = filtered_left;
+        // let mut current_right = filtered_right;
+        // let mut stage_output = [0.0; 4];
+        // let mut diffusion_out_left = 0f32;
+        // let mut diffusion_out_right = 0f32;
 
-        // Mix delay outputs signals using Hadamard transform
-        fast_hadamard_transform_4(&mut diffusion);
+        // for stage in &mut self.diffusion_stages {
+        //     stage_output = stage.process(current_left, current_right);
 
-        let mut echoes = [0.0f32; 4];
-        for i in 0..4 {
-            echoes[i] = self.feedback_delay_lines[i].read();
-        }
+        //     // Mix stage output to create input for next stage
+        //     current_left = stage_output[0] + stage_output[2]; // Mix left channels
+        //     current_right = stage_output[1] + stage_output[3]; // Mix right channels
+        //                                                        // Sum outputs from all diffusion stages (early reflections)
+        //     diffusion_out_left += (stage_output[0] + stage_output[2]) * 0.25;
+        //     diffusion_out_right += (stage_output[1] + stage_output[3]) * 0.25;
+        // }
+        //
+        let input = [filtered_left, filtered_right, filtered_left, filtered_right];
 
-        fast_hadamard_transform_4(&mut echoes);
+        // Use the final diffusion stage output as input to feedback stage
+        let echoes = self.feedback_stage.process(input);
+        let out_left = (echoes[0] + echoes[2]);
+        let out_right = (echoes[1] + echoes[3]);
 
-        for i in 0..4 {
-            // Write the diffusion to the delay lines with the mixed echoes
-            self.feedback_delay_lines[i].write(diffusion[i], echoes[i]);
-        }
+        // Output combines early reflections (diffusion) and late reverberation (echoes)
+        // let mut out_left = 0.0f32;
+        // let mut out_right = 0.0f32;
 
-        // Output the echoes mixed with the diffusion (for early reflections)
-        let mut out_left = 0.0f32;
-        let mut out_right = 0.0f32;
-        for i in 0..4 {
-            if i % 2 == 0 {
-                out_left += diffusion[i] + echoes[i];
-            } else {
-                out_right += diffusion[i] + echoes[i];
-            }
-        }
+        // Add late reverberation
+        // out_left += (echoes[0] + echoes[2]) * 0.7 + (diffusion_out_left * 0.3);
+        // out_right += (echoes[1] + echoes[3]) * 0.7 + (diffusion_out_right * 0.3);
 
         (out_left, out_right)
     }
@@ -188,11 +314,14 @@ impl StereoAudioProcessor for FDNReverb {
 
 #[cfg(test)]
 mod tests {
+    use crate::audio::sec_to_samples;
+
     use super::*;
 
     #[test]
     fn test_fdn_reverb_basic_operation() {
         let mut reverb = FDNReverb::new();
+        reverb.set_size(1.0); // Initialize delay times
 
         // Test silence
         let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
@@ -208,7 +337,7 @@ mod tests {
         let mut outputs_r = Vec::new();
 
         // Process silence to hear reverb tail
-        for _ in 0..5000 {
+        for _ in 0..sec_to_samples(0.2) {
             let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
             outputs_l.push(out_l);
             outputs_r.push(out_r);
@@ -234,6 +363,56 @@ mod tests {
         let has_tail_r = outputs_r.iter().any(|&x| x.abs() > 0.1);
         assert!(has_tail_l, "FDNReverb should produce left reverb tail");
         assert!(has_tail_r, "FDNReverb should produce right reverb tail");
+    }
+
+    #[test]
+    fn test_fdn_reverb_modulation() {
+        let mut reverb = FDNReverb::new();
+        reverb.set_size(1.0);
+        reverb.set_modulation_depth(1.0); // Full modulation
+
+        // Process impulse and capture modulated reverb tail
+        let (impulse_l, impulse_r) = reverb.process_stereo(1.0, 0.5);
+
+        let mut outputs_l = Vec::new();
+        let mut outputs_r = Vec::new();
+
+        // Process samples to hear modulated reverb tail
+        for _ in 0..sec_to_samples(0.5) {
+            let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
+            outputs_l.push(out_l);
+            outputs_r.push(out_r);
+        }
+
+        // Should produce stable modulated reverb
+        let max_amp_l = outputs_l.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let max_amp_r = outputs_r.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+
+        assert!(
+            max_amp_l < 2.0,
+            "Modulated FDNReverb left should remain stable"
+        );
+        assert!(
+            max_amp_r < 2.0,
+            "Modulated FDNReverb right should remain stable"
+        );
+
+        // Should still produce reverb tail
+        let has_tail_l = outputs_l.iter().any(|&x| x.abs() > 0.01);
+        let has_tail_r = outputs_r.iter().any(|&x| x.abs() > 0.01);
+        assert!(
+            has_tail_l,
+            "Modulated FDNReverb should produce left reverb tail"
+        );
+        assert!(
+            has_tail_r,
+            "Modulated FDNReverb should produce right reverb tail"
+        );
+
+        println!(
+            "Modulated FDNReverb test: max tail amplitude L={}, R={}",
+            max_amp_l, max_amp_r
+        );
     }
 
     #[test]

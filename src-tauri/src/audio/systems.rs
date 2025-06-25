@@ -1,4 +1,4 @@
-use crate::audio::delays::DelayLine;
+use crate::audio::delays::FilteredDelayLine;
 use crate::audio::instruments::{KickDrum, SnareDrum};
 use crate::audio::modulators::SampleAndHold;
 use crate::audio::reverbs::FDNReverb;
@@ -67,7 +67,7 @@ pub struct DrumMachine {
     snare_pattern: [bool; 16],
 
     // Effects chain
-    delay: DelayLine,
+    delay: FilteredDelayLine,
     reverb: FDNReverb,
 
     // Effects sends
@@ -96,7 +96,7 @@ impl DrumMachine {
             ],
 
             // Initialize effects
-            delay: DelayLine::new(0.5), // 0.5 seconds max delay
+            delay: FilteredDelayLine::new(0.5), // 0.5 seconds max delay
             reverb: FDNReverb::new(),
 
             // Default send levels
@@ -106,7 +106,7 @@ impl DrumMachine {
             // Initialize modulators with slower rates and configurable slew
             delay_time_mod: SampleAndHold::new(0.125, 0.1, 0.5, 150.0), // 8 sec updates, 150ms slew
             reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0), // 6 sec updates, 200ms slew
-            reverb_decay_mod: SampleAndHold::new(0.1, 0.3, 0.7, 100.0), // 10 sec updates, 100ms slew
+            reverb_decay_mod: SampleAndHold::new(0.1, 0.5, 0.95, 100.0), // 10 sec updates, 100ms slew
         }
     }
 
@@ -139,7 +139,7 @@ impl DrumMachine {
 
         // Apply modulated parameters
         self.reverb.set_size(modulated_reverb_size);
-        self.reverb.set_feedback(0.95);
+        self.reverb.set_feedback(modulated_reverb_decay);
 
         // Generate dry drum samples
         let kick_sample = self.kick.next_sample();

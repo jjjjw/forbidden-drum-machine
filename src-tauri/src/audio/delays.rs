@@ -3,12 +3,10 @@ use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::sec_to_samples;
 use crate::audio::AudioProcessor;
 
-// Delay line with freeze functionality
+// Simple delay line without filtering
 pub struct DelayLine {
     buffer: DelayBuffer,
     frozen: bool,
-    highpass: OnePoleFilter,
-    lowpass: OnePoleFilter,
     feedback: f32,
 }
 
@@ -17,8 +15,6 @@ impl DelayLine {
         Self {
             buffer: DelayBuffer::new(sec_to_samples(max_delay_seconds) as usize),
             frozen: false,
-            highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass),
-            lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass),
             feedback: 0.0,
         }
     }
@@ -27,28 +23,16 @@ impl DelayLine {
         self.frozen = freeze;
     }
 
-    pub fn set_highpass_freq(&mut self, freq: f32) {
-        self.highpass.set_cutoff_frequency(freq);
-    }
-
-    pub fn set_lowpass_freq(&mut self, freq: f32) {
-        self.lowpass.set_cutoff_frequency(freq);
-    }
-
     pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
         self.buffer.set_delay_seconds(delay_seconds);
     }
 
     pub fn set_feedback(&mut self, feedback: f32) {
-        self.feedback = feedback.clamp(-1.0, 1.0); // Allow feedback of 1.0
+        self.feedback = feedback.clamp(-1.0, 1.0);
     }
 
     pub fn read(&mut self) -> f32 {
-        let delayed = self.buffer.read();
-
-        // Apply filters to delayed signal
-        let filtered = self.lowpass.process(self.highpass.process(delayed));
-        filtered
+        self.buffer.read()
     }
 
     pub fn write(&mut self, input: f32, feedback: f32) {
@@ -58,16 +42,65 @@ impl DelayLine {
 
 impl AudioProcessor for DelayLine {
     fn process(&mut self, input: f32) -> f32 {
-        let filtered = self.read();
-        // Write to buffer only if not frozen
+        let delayed = self.read();
+
         if !self.frozen {
-            self.write(input, filtered);
+            self.write(input, delayed);
+        }
+
+        delayed
+    }
+}
+
+// Delay line with filtering
+pub struct FilteredDelayLine {
+    delay_line: DelayLine,
+    highpass: OnePoleFilter,
+    lowpass: OnePoleFilter,
+}
+
+impl FilteredDelayLine {
+    pub fn new(max_delay_seconds: f32) -> Self {
+        Self {
+            delay_line: DelayLine::new(max_delay_seconds),
+            highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass),
+            lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass),
+        }
+    }
+
+    pub fn set_freeze(&mut self, freeze: bool) {
+        self.delay_line.set_freeze(freeze);
+    }
+
+    pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
+        self.delay_line.set_delay_seconds(delay_seconds);
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.delay_line.set_feedback(feedback);
+    }
+
+    pub fn set_highpass_freq(&mut self, freq: f32) {
+        self.highpass.set_cutoff_frequency(freq);
+    }
+
+    pub fn set_lowpass_freq(&mut self, freq: f32) {
+        self.lowpass.set_cutoff_frequency(freq);
+    }
+}
+
+impl AudioProcessor for FilteredDelayLine {
+    fn process(&mut self, input: f32) -> f32 {
+        let delayed = self.delay_line.read();
+        let filtered = self.lowpass.process(self.highpass.process(delayed));
+
+        if !self.delay_line.frozen {
+            self.delay_line.write(input, filtered);
         }
 
         filtered
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
