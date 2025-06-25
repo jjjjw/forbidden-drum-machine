@@ -8,7 +8,7 @@ use audio_output::AudioOutput;
 
 // Global drum machine instance
 static DRUM_MACHINE: Lazy<Arc<Mutex<DrumMachine>>> = Lazy::new(|| {
-    Arc::new(Mutex::new(DrumMachine::new()))
+    Arc::new(Mutex::new(DrumMachine::new(44100.0)))
 });
 
 static mut AUDIO_OUTPUT: Option<AudioOutput> = None;

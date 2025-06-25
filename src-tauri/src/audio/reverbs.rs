@@ -41,13 +41,13 @@ pub struct FeedbackStage {
 }
 
 impl FeedbackStage {
-    pub fn new(base_delay_ms: f32) -> Self {
+    pub fn new(base_delay_ms: f32, sample_rate: f32) -> Self {
         let base_delay = base_delay_ms / 1000.0; // Convert ms to seconds
         let mut delay_lines = [
-            DelayLine::new(FEEDBACK_DELAYS[0] * base_delay * 2.0),
-            DelayLine::new(FEEDBACK_DELAYS[1] * base_delay * 2.0),
-            DelayLine::new(FEEDBACK_DELAYS[2] * base_delay * 2.0),
-            DelayLine::new(FEEDBACK_DELAYS[3] * base_delay * 2.0),
+            DelayLine::new(FEEDBACK_DELAYS[0] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[1] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[2] * base_delay * 2.0, sample_rate),
+            DelayLine::new(FEEDBACK_DELAYS[3] * base_delay * 2.0, sample_rate),
         ];
 
         for i in 0..4 {
@@ -56,10 +56,10 @@ impl FeedbackStage {
         }
 
         let lfos = [
-            SineOscillator::new(0.19),
-            SineOscillator::new(0.37),
-            SineOscillator::new(0.29),
-            SineOscillator::new(0.41),
+            SineOscillator::new(0.19, sample_rate),
+            SineOscillator::new(0.37, sample_rate),
+            SineOscillator::new(0.29, sample_rate),
+            SineOscillator::new(0.41, sample_rate),
         ];
 
         Self {
@@ -87,6 +87,12 @@ impl FeedbackStage {
         self.size = size.clamp(0.1, 2.0);
     }
 
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        for lfo in &mut self.lfos {
+            lfo.set_sample_rate(sample_rate);
+        }
+    }
+
     pub fn process(&mut self, diffusion: [f32; 4]) -> [f32; 4] {
         // Apply LFO modulation to delay times
         for i in 0..4 {
@@ -112,6 +118,10 @@ impl FeedbackStage {
             self.delay_lines[i].write(diffusion[i], echoes[i]);
         }
 
+        // Phase shift the echoes
+        echoes[0] *= -1.0;
+        echoes[1] *= -1.0;
+
         echoes
     }
 }
@@ -127,14 +137,14 @@ pub struct FDNReverb {
 }
 
 impl FDNReverb {
-    pub fn new() -> Self {
-        let feedback_stage = FeedbackStage::new(50.0); // 50ms base delay
+    pub fn new(sample_rate: f32) -> Self {
+        let feedback_stage = FeedbackStage::new(50.0, sample_rate); // 50ms base delay
 
         Self {
-            input_highcut_left: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass),
-            input_lowcut_left: OnePoleFilter::new(200.0, OnePoleMode::Highpass),
-            input_highcut_right: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass),
-            input_lowcut_right: OnePoleFilter::new(200.0, OnePoleMode::Highpass),
+            input_highcut_left: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass, sample_rate),
+            input_lowcut_left: OnePoleFilter::new(200.0, OnePoleMode::Highpass, sample_rate),
+            input_highcut_right: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass, sample_rate),
+            input_lowcut_right: OnePoleFilter::new(200.0, OnePoleMode::Highpass, sample_rate),
             feedback_stage,
         }
     }
@@ -149,6 +159,10 @@ impl FDNReverb {
 
     pub fn set_modulation_depth(&mut self, depth: f32) {
         self.feedback_stage.set_modulation_depth(depth);
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.feedback_stage.set_sample_rate(sample_rate);
     }
 }
 
@@ -171,17 +185,20 @@ impl StereoAudioProcessor for FDNReverb {
 
         (out_left, out_right)
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.set_sample_rate(sample_rate);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::audio::sec_to_samples;
-
     use super::*;
 
     #[test]
     fn test_fdn_reverb_basic_operation() {
-        let mut reverb = FDNReverb::new();
+        let sample_rate = 44100.0;
+        let mut reverb = FDNReverb::new(sample_rate);
         reverb.set_size(1.0); // Initialize delay times
 
         // Test silence
@@ -198,7 +215,7 @@ mod tests {
         let mut outputs_r = Vec::new();
 
         // Process silence to hear reverb tail
-        for _ in 0..sec_to_samples(0.2) {
+        for _ in 0..(0.2 * sample_rate) as usize {
             let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
             outputs_l.push(out_l);
             outputs_r.push(out_r);
@@ -228,18 +245,19 @@ mod tests {
 
     #[test]
     fn test_fdn_reverb_modulation() {
-        let mut reverb = FDNReverb::new();
+        let sample_rate = 44100.0;
+        let mut reverb = FDNReverb::new(sample_rate);
         reverb.set_size(1.0);
         reverb.set_modulation_depth(1.0); // Full modulation
 
         // Process impulse and capture modulated reverb tail
-        let (impulse_l, impulse_r) = reverb.process_stereo(1.0, 0.5);
+        let _impulse = reverb.process_stereo(1.0, 0.5);
 
         let mut outputs_l = Vec::new();
         let mut outputs_r = Vec::new();
 
         // Process samples to hear modulated reverb tail
-        for _ in 0..sec_to_samples(0.5) {
+        for _ in 0..(0.5 * sample_rate) as usize {
             let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
             outputs_l.push(out_l);
             outputs_r.push(out_r);

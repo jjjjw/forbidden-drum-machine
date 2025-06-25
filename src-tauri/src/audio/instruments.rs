@@ -11,11 +11,11 @@ pub struct KickDrum {
 }
 
 impl KickDrum {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         let mut kick = Self {
-            oscillator: SineOscillator::new(60.0),
-            amp_envelope: AREnvelope::new(),
-            freq_envelope: AREnvelope::new(),
+            oscillator: SineOscillator::new(60.0, sample_rate),
+            amp_envelope: AREnvelope::new(sample_rate),
+            freq_envelope: AREnvelope::new(sample_rate),
             base_frequency: 60.0,
             frequency_mod_amount: 40.0,
         };
@@ -83,6 +83,12 @@ impl AudioGenerator for KickDrum {
         let sample = self.oscillator.next_sample();
         sample * amp_env
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.oscillator.set_sample_rate(sample_rate);
+        self.amp_envelope.set_sample_rate(sample_rate);
+        self.freq_envelope.set_sample_rate(sample_rate);
+    }
 }
 
 pub struct SnareDrum {
@@ -91,10 +97,10 @@ pub struct SnareDrum {
 }
 
 impl SnareDrum {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         let mut snare = Self {
             noise_generator: NoiseGenerator::new(),
-            amp_envelope: AREnvelope::new(),
+            amp_envelope: AREnvelope::new(sample_rate),
         };
 
         snare.amp_envelope.set_attack_time(0.001);
@@ -131,5 +137,10 @@ impl AudioGenerator for SnareDrum {
         let amp_env = self.amp_envelope.next_sample();
         let sample = self.noise_generator.next_sample();
         sample * amp_env
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.noise_generator.set_sample_rate(sample_rate);
+        self.amp_envelope.set_sample_rate(sample_rate);
     }
 }

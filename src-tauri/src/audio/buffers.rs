@@ -1,4 +1,3 @@
-use crate::audio::sec_to_samples;
 
 // Integer delay buffer
 pub struct DelayBuffer {
@@ -20,11 +19,6 @@ impl DelayBuffer {
         self.buffer.len()
     }
 
-    pub fn set_delay_seconds(&mut self, seconds: f32) {
-        self.delay_samples = (sec_to_samples(seconds) as usize)
-            .max(0)
-            .min(self.buffer.len() - 1);
-    }
 
     pub fn set_delay_samples(&mut self, samples: usize) {
         self.delay_samples = samples.max(0).min(self.buffer.len() - 1);

@@ -1,5 +1,4 @@
 // Modulators module - using SineOscillator for LFOs
-use crate::audio::SAMPLE_RATE;
 use fastrand::Rng;
 
 pub struct SampleAndHold {
@@ -12,16 +11,17 @@ pub struct SampleAndHold {
     min_value: f32,
     max_value: f32,
     slew_rate: f32, // Max change per sample
+    sample_rate: f32,
 }
 
 impl SampleAndHold {
-    pub fn new(rate_hz: f32, min_value: f32, max_value: f32, slew_time_ms: f32) -> Self {
-        let samples_per_update = (SAMPLE_RATE / rate_hz) as u32;
+    pub fn new(rate_hz: f32, min_value: f32, max_value: f32, slew_time_ms: f32, sample_rate: f32) -> Self {
+        let samples_per_update = (sample_rate / rate_hz) as u32;
         let mut rng = Rng::new();
         let initial_value = min_value + rng.f32() * (max_value - min_value);
         
         // Calculate slew rate for smooth transitions
-        let slew_samples = (slew_time_ms / 1000.0) * SAMPLE_RATE;
+        let slew_samples = (slew_time_ms / 1000.0) * sample_rate;
         let slew_rate = (max_value - min_value) / slew_samples;
         
         Self {
@@ -34,6 +34,7 @@ impl SampleAndHold {
             min_value,
             max_value,
             slew_rate,
+            sample_rate,
         }
     }
     
@@ -67,7 +68,7 @@ impl SampleAndHold {
     
     pub fn set_rate(&mut self, rate_hz: f32) {
         self.rate_hz = rate_hz;
-        self.samples_per_update = (SAMPLE_RATE / rate_hz).max(1.0) as u32;
+        self.samples_per_update = (self.sample_rate / rate_hz).max(1.0) as u32;
     }
     
     pub fn set_range(&mut self, min_value: f32, max_value: f32) {
@@ -79,13 +80,22 @@ impl SampleAndHold {
         self.target_value = self.target_value.clamp(min_value, max_value);
         
         // Recalculate slew rate for new range
-        let slew_time_ms = (self.slew_rate * SAMPLE_RATE * 1000.0) / (self.max_value - self.min_value);
+        let slew_time_ms = (self.slew_rate * self.sample_rate * 1000.0) / (self.max_value - self.min_value);
         self.set_slew_time(slew_time_ms);
     }
     
     pub fn set_slew_time(&mut self, slew_time_ms: f32) {
-        let slew_samples = (slew_time_ms / 1000.0) * SAMPLE_RATE;
+        let slew_samples = (slew_time_ms / 1000.0) * self.sample_rate;
         self.slew_rate = (self.max_value - self.min_value) / slew_samples;
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        // Recalculate dependent values
+        self.samples_per_update = (sample_rate / self.rate_hz).max(1.0) as u32;
+        // Preserve slew time in milliseconds when sample rate changes
+        let current_slew_time_ms = (self.slew_rate * self.sample_rate * 1000.0) / (self.max_value - self.min_value);
+        self.set_slew_time(current_slew_time_ms);
     }
 }
 
@@ -95,7 +105,8 @@ mod tests {
     
     #[test]
     fn test_sample_and_hold_basic_operation() {
-        let mut sh = SampleAndHold::new(1.0, 0.0, 1.0, 100.0); // 1Hz rate, 0-1 range, 100ms slew
+        let sample_rate = 44100.0;
+        let mut sh = SampleAndHold::new(1.0, 0.0, 1.0, 100.0, sample_rate); // 1Hz rate, 0-1 range, 100ms slew
         
         // Initial value should be within range
         let initial_value = sh.get_current_value();
@@ -117,10 +128,11 @@ mod tests {
     
     #[test]
     fn test_sample_and_hold_rate_changes() {
+        let sample_rate = 44100.0;
         let rate_hz = 1.0; // 1Hz = every 44100 samples at 44.1kHz
-        let mut sh = SampleAndHold::new(rate_hz, 0.0, 1.0, 10.0); // Short slew time
+        let mut sh = SampleAndHold::new(rate_hz, 0.0, 1.0, 10.0, sample_rate); // Short slew time
         
-        let expected_samples_per_update = (SAMPLE_RATE / rate_hz) as u32;
+        let expected_samples_per_update = (sample_rate / rate_hz) as u32;
         let mut target_changes = 0;
         let mut sample_count = 0;
         
@@ -143,11 +155,12 @@ mod tests {
     
     #[test]
     fn test_sample_and_hold_slew_limiting() {
-        let mut sh = SampleAndHold::new(0.1, 0.0, 1.0, 200.0); // Very slow rate, 200ms slew
+        let sample_rate = 44100.0;
+        let mut sh = SampleAndHold::new(0.1, 0.0, 1.0, 200.0, sample_rate); // Very slow rate, 200ms slew
         
         // Force a target change by processing past the update time
-        let samples_per_update = (SAMPLE_RATE / 0.1) as usize;
-        let initial_value = sh.get_current_value();
+        let samples_per_update = (sample_rate / 0.1) as usize;
+        let _initial_value = sh.get_current_value();
         
         // Process samples to trigger target change
         for _ in 0..samples_per_update + 10 {
@@ -167,7 +180,7 @@ mod tests {
         }
         
         // Calculate expected maximum change per sample based on slew time
-        let slew_samples = (200.0 / 1000.0) * SAMPLE_RATE; // 200ms in samples
+        let slew_samples = (200.0 / 1000.0) * sample_rate; // 200ms in samples
         let expected_max_change = 1.0 / slew_samples; // Max range / slew samples
         
         println!("Slew test: max change per sample = {:.6}, expected max = {:.6}", 
@@ -185,9 +198,10 @@ mod tests {
     
     #[test]
     fn test_sample_and_hold_range_limits() {
+        let sample_rate = 44100.0;
         let min_val = 0.2;
         let max_val = 0.8;
-        let mut sh = SampleAndHold::new(5.0, min_val, max_val, 10.0); // Fast slew for quicker settling
+        let mut sh = SampleAndHold::new(5.0, min_val, max_val, 10.0, sample_rate); // Fast slew for quicker settling
         
         // Process many samples to see various random values
         // Need enough samples to see multiple target changes and full range exploration
@@ -213,7 +227,8 @@ mod tests {
     
     #[test]
     fn test_sample_and_hold_set_methods() {
-        let mut sh = SampleAndHold::new(10.0, 0.0, 1.0, 10.0); // High rate, fast slew
+        let sample_rate = 44100.0;
+        let mut sh = SampleAndHold::new(10.0, 0.0, 1.0, 10.0, sample_rate); // High rate, fast slew
         
         // Test that current value is initially in range
         let initial_value = sh.get_current_value();

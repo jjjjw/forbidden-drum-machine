@@ -1,6 +1,5 @@
 use crate::audio::buffers::DelayBuffer;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
-use crate::audio::sec_to_samples;
 use crate::audio::AudioProcessor;
 
 // Simple delay line without filtering
@@ -8,14 +7,16 @@ pub struct DelayLine {
     buffer: DelayBuffer,
     frozen: bool,
     feedback: f32,
+    sample_rate: f32,
 }
 
 impl DelayLine {
-    pub fn new(max_delay_seconds: f32) -> Self {
+    pub fn new(max_delay_seconds: f32, sample_rate: f32) -> Self {
         Self {
-            buffer: DelayBuffer::new(sec_to_samples(max_delay_seconds) as usize),
+            buffer: DelayBuffer::new((max_delay_seconds * sample_rate) as usize),
             frozen: false,
             feedback: 0.0,
+            sample_rate,
         }
     }
 
@@ -24,7 +25,8 @@ impl DelayLine {
     }
 
     pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
-        self.buffer.set_delay_seconds(delay_seconds);
+        let delay_samples = (delay_seconds * self.sample_rate) as usize;
+        self.buffer.set_delay_samples(delay_samples);
     }
 
     pub fn set_feedback(&mut self, feedback: f32) {
@@ -50,6 +52,10 @@ impl AudioProcessor for DelayLine {
 
         delayed
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+    }
 }
 
 // Delay line with filtering
@@ -60,11 +66,11 @@ pub struct FilteredDelayLine {
 }
 
 impl FilteredDelayLine {
-    pub fn new(max_delay_seconds: f32) -> Self {
+    pub fn new(max_delay_seconds: f32, sample_rate: f32) -> Self {
         Self {
-            delay_line: DelayLine::new(max_delay_seconds),
-            highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass),
-            lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass),
+            delay_line: DelayLine::new(max_delay_seconds, sample_rate),
+            highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass, sample_rate),
+            lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass, sample_rate),
         }
     }
 
@@ -100,16 +106,22 @@ impl AudioProcessor for FilteredDelayLine {
 
         filtered
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.delay_line.set_sample_rate(sample_rate);
+        self.highpass.set_sample_rate(sample_rate);
+        self.lowpass.set_sample_rate(sample_rate);
+    }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::sec_to_samples;
-
+    
     #[test]
     fn test_delay_line_basic_operation() {
-        let mut delay = DelayLine::new(100.0);
-        delay.set_delay_seconds(100.0 / sec_to_samples(1.0) as f32);
+        let sample_rate = 44100.0;
+        let mut delay = DelayLine::new(1.0, sample_rate);
+        delay.set_delay_seconds(100.0 / sample_rate);
         delay.set_feedback(0.0);
 
         // Test silence with no input
@@ -145,8 +157,9 @@ mod tests {
 
     #[test]
     fn test_delay_line_feedback_one() {
-        let mut delay = DelayLine::new(1000.0);
-        let delay_seconds = 100.0 / sec_to_samples(1.0) as f32;
+        let sample_rate = 44100.0;
+        let mut delay = DelayLine::new(1.0, sample_rate);
+        let delay_seconds = 100.0 / sample_rate;
         let feedback = 1.0; // Exactly 1.0 feedback
 
         delay.set_delay_seconds(delay_seconds);

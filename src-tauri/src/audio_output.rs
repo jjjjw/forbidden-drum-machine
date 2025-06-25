@@ -14,8 +14,14 @@ impl AudioOutput {
             .ok_or("No output device available")?;
 
         let config = device.default_output_config()?;
-        // TODO: use this
-        // let sample_rate = config.sample_rate();
+        let sample_rate = config.sample_rate().0 as f32;
+
+        println!("Audio device sample rate: {}", sample_rate);
+
+        // Update the drum machine to use the actual device sample rate
+        if let Ok(mut dm) = drum_machine.try_lock() {
+            dm.set_sample_rate(sample_rate);
+        }
 
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => Self::run::<f32>(&device, &config.into(), drum_machine)?,

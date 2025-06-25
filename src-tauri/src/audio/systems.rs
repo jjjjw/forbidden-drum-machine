@@ -2,7 +2,7 @@ use crate::audio::delays::FilteredDelayLine;
 use crate::audio::instruments::{KickDrum, SnareDrum};
 use crate::audio::modulators::SampleAndHold;
 use crate::audio::reverbs::FDNReverb;
-use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, SAMPLE_RATE};
+use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 
 pub struct Clock {
     bpm: f32,
@@ -10,16 +10,18 @@ pub struct Clock {
     current_sample: u32,
     step: u8,
     steps_per_bar: u8,
+    sample_rate: f32,
 }
 
 impl Clock {
-    pub fn new(bpm: f32) -> Self {
+    pub fn new(bpm: f32, sample_rate: f32) -> Self {
         let mut clock = Self {
             bpm,
             samples_per_beat: 0,
             current_sample: 0,
             step: 0,
             steps_per_bar: 16,
+            sample_rate,
         };
         clock.calculate_timing();
         clock
@@ -30,10 +32,10 @@ impl Clock {
         self.calculate_timing();
     }
 
-    fn calculate_timing(&mut self) {
+    pub fn calculate_timing(&mut self) {
         let beats_per_second = self.bpm / 60.0;
         let steps_per_second = beats_per_second * (self.steps_per_bar as f32 / 4.0);
-        self.samples_per_beat = (SAMPLE_RATE / steps_per_second) as u32;
+        self.samples_per_beat = (self.sample_rate / steps_per_second) as u32;
     }
 
     pub fn tick(&mut self) -> Option<u8> {
@@ -81,11 +83,11 @@ pub struct DrumMachine {
 }
 
 impl DrumMachine {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
-            kick: KickDrum::new(),
-            snare: SnareDrum::new(),
-            clock: Clock::new(120.0),
+            kick: KickDrum::new(sample_rate),
+            snare: SnareDrum::new(sample_rate),
+            clock: Clock::new(120.0, sample_rate),
             kick_pattern: [
                 true, false, false, false, false, false, true, false, false, false, false, false,
                 false, false, true, false,
@@ -96,22 +98,37 @@ impl DrumMachine {
             ],
 
             // Initialize effects
-            delay: FilteredDelayLine::new(0.5), // 0.5 seconds max delay
-            reverb: FDNReverb::new(),
+            delay: FilteredDelayLine::new(0.5, sample_rate), // 0.5 seconds max delay
+            reverb: FDNReverb::new(sample_rate),
 
             // Default send levels
             delay_send: 0.2,
             reverb_send: 0.3,
 
             // Initialize modulators with slower rates and configurable slew
-            delay_time_mod: SampleAndHold::new(0.125, 0.1, 0.5, 150.0), // 8 sec updates, 150ms slew
-            reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0), // 6 sec updates, 200ms slew
-            reverb_decay_mod: SampleAndHold::new(0.1, 0.5, 0.95, 100.0), // 10 sec updates, 100ms slew
+            delay_time_mod: SampleAndHold::new(0.125, 0.1, 0.5, 150.0, sample_rate), // 8 sec updates, 150ms slew
+            reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0, sample_rate), // 6 sec updates, 200ms slew
+            reverb_decay_mod: SampleAndHold::new(0.1, 0.5, 0.95, 100.0, sample_rate), // 10 sec updates, 100ms slew
         }
     }
 
     pub fn set_bpm(&mut self, bpm: f32) {
         self.clock.set_bpm(bpm);
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        // Update all audio components to use the new sample rate
+        self.kick.set_sample_rate(sample_rate);
+        self.snare.set_sample_rate(sample_rate);
+        self.delay.set_sample_rate(sample_rate);
+        self.reverb.set_sample_rate(sample_rate);
+        self.delay_time_mod.set_sample_rate(sample_rate);
+        self.reverb_size_mod.set_sample_rate(sample_rate);
+        self.reverb_decay_mod.set_sample_rate(sample_rate);
+
+        // Update the clock as well (it has sample rate for timing calculations)
+        self.clock.sample_rate = sample_rate;
+        self.clock.calculate_timing();
     }
 
     pub fn set_kick_pattern(&mut self, pattern: [bool; 16]) {
@@ -186,7 +203,7 @@ impl DrumMachine {
     }
 
     pub fn set_delay_freeze(&mut self, freeze: bool) {
-        self.delay.set_freeze(freeze);
+        // self.delay.set_freeze(freeze);
     }
 
     pub fn set_delay_highpass(&mut self, freq: f32) {
@@ -226,23 +243,23 @@ impl DrumMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::SAMPLE_RATE;
 
     #[test]
     fn test_audio_output_one_bar() {
-        let mut drum_machine = DrumMachine::new();
+        let sample_rate = 44100.0;
+        let mut drum_machine = DrumMachine::new(sample_rate);
         drum_machine.set_bpm(120.0);
 
         // Calculate samples for one bar (16 steps at 120 BPM)
         let beats_per_second = 120.0 / 60.0;
         let steps_per_second = beats_per_second * 4.0; // 16 steps per 4 beats
-        let samples_per_step = SAMPLE_RATE / steps_per_second;
+        let samples_per_step = sample_rate / steps_per_second;
         let total_samples = (samples_per_step * 16.0) as usize;
 
         println!("Testing drum machine audio output for one bar");
         println!(
             "BPM: 120, Sample rate: {}, Samples per step: {:.0}, Total samples: {}",
-            SAMPLE_RATE, samples_per_step, total_samples
+            sample_rate, samples_per_step, total_samples
         );
 
         let mut max_amplitude = 0.0f32;

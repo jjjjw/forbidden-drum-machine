@@ -1,5 +1,5 @@
 use crate::audio::buffers::DelayBuffer;
-use crate::audio::{AudioProcessor, PI, SAMPLE_RATE};
+use crate::audio::{AudioProcessor, PI};
 
 // Tan approximation function
 fn tan_a(x: f32) -> f32 {
@@ -30,6 +30,7 @@ pub struct SVF {
     mode: FilterMode,
     cf: f32, // Cutoff frequency
     q: f32,  // Resonance
+    sample_rate: f32,
 
     // Precomputed coefficients
     g: f32,
@@ -41,7 +42,7 @@ pub struct SVF {
 }
 
 impl SVF {
-    pub fn new(cf: f32, q: f32, mode: FilterMode) -> Self {
+    pub fn new(cf: f32, q: f32, mode: FilterMode, sample_rate: f32) -> Self {
         let mut svf = Self {
             y0: 0.0,
             y1: 0.0,
@@ -51,6 +52,7 @@ impl SVF {
             mode,
             cf,
             q,
+            sample_rate,
             g: 0.0,
             r: 0.0,
             h: 0.0,
@@ -63,7 +65,7 @@ impl SVF {
 
     fn update_coefficients(&mut self) {
         if self.coeffs_dirty {
-            self.g = tan_a(self.cf * PI / SAMPLE_RATE);
+            self.g = tan_a(self.cf * PI / self.sample_rate);
             self.r = 1.0 / self.q;
             self.h = 1.0 / (1.0 + self.r * self.g + self.g * self.g);
             self.rpg = self.r + self.g;
@@ -114,6 +116,11 @@ impl AudioProcessor for SVF {
             FilterMode::Bandpass => self.bp,
         }
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.update_coefficients();
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -126,17 +133,19 @@ pub struct OnePoleFilter {
     state: f32,
     cutoff: f32,
     mode: OnePoleMode,
+    sample_rate: f32,
     a0: f32,
     b1: f32,
     coeffs_dirty: bool,
 }
 
 impl OnePoleFilter {
-    pub fn new(cutoff: f32, mode: OnePoleMode) -> Self {
+    pub fn new(cutoff: f32, mode: OnePoleMode, sample_rate: f32) -> Self {
         let mut filter = Self {
             state: 0.0,
             cutoff,
             mode,
+            sample_rate,
             a0: 0.0,
             b1: 0.0,
             coeffs_dirty: true,
@@ -147,7 +156,7 @@ impl OnePoleFilter {
 
     fn update_coefficients(&mut self) {
         if self.coeffs_dirty {
-            let omega = 2.0 * PI * self.cutoff / SAMPLE_RATE;
+            let omega = 2.0 * PI * self.cutoff / self.sample_rate;
             self.b1 = (-omega).exp();
             self.a0 = 1.0 - self.b1;
             self.coeffs_dirty = false;
@@ -181,24 +190,32 @@ impl AudioProcessor for OnePoleFilter {
             OnePoleMode::Highpass => input - lowpass,
         }
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.update_coefficients();
+    }
 }
 
 // Allpass filter
 pub struct Allpass {
     delay: DelayBuffer,
     g: f32, // Feedback gain
+    sample_rate: f32,
 }
 
 impl Allpass {
-    pub fn new(max_delay_samples: usize) -> Self {
+    pub fn new(max_delay_samples: usize, sample_rate: f32) -> Self {
         Self {
             delay: DelayBuffer::new(max_delay_samples),
             g: 0.0, // Default feedback gain
+            sample_rate,
         }
     }
 
     pub fn set_delay_seconds(&mut self, seconds: f32) {
-        self.delay.set_delay_seconds(seconds);
+        let delay_samples = (seconds * self.sample_rate) as usize;
+        self.delay.set_delay_samples(delay_samples);
     }
 
     pub fn set_feedback(&mut self, g: f32) {
@@ -213,5 +230,9 @@ impl AudioProcessor for Allpass {
         let y = z + x * -self.g;
         self.delay.write(x);
         y
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
     }
 }

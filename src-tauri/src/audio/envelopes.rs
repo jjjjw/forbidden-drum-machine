@@ -1,4 +1,4 @@
-use crate::audio::{sec_to_samples, AudioGenerator};
+use crate::audio::AudioGenerator;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CurveType {
@@ -12,6 +12,7 @@ pub struct AREnvelope {
     release_time: f32,
     attack_curve: CurveType,
     pub(crate) release_curve: CurveType,
+    sample_rate: f32,
 
     pub(crate) state: EnvelopeState,
     pub(crate) current_level: f32,
@@ -30,12 +31,13 @@ pub(crate) enum EnvelopeState {
 }
 
 impl AREnvelope {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
             attack_time: 0.01,
             release_time: 0.1,
             attack_curve: CurveType::Logarithmic,
             release_curve: CurveType::Exponential,
+            sample_rate,
 
             state: EnvelopeState::Idle,
             current_level: 0.0,
@@ -66,8 +68,8 @@ impl AREnvelope {
     }
 
     fn calculate_parameters(&mut self) {
-        self.attack_samples = sec_to_samples(self.attack_time);
-        self.release_samples = sec_to_samples(self.release_time);
+        self.attack_samples = (self.attack_time * self.sample_rate) as u32;
+        self.release_samples = (self.release_time * self.sample_rate) as u32;
 
         self.attack_increment = if self.attack_samples > 0 {
             1.0 / self.attack_samples as f32
@@ -139,6 +141,11 @@ impl AudioGenerator for AREnvelope {
             }
         }
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.calculate_parameters();
+    }
 }
 
 // AREEnvelope - Attack-Release-End envelope (extends AR with configurable end level)
@@ -148,9 +155,9 @@ pub struct AREEnvelope {
 }
 
 impl AREEnvelope {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
-            ar_envelope: AREnvelope::new(),
+            ar_envelope: AREnvelope::new(sample_rate),
             end_level: 0.0,
         }
     }
@@ -215,16 +222,20 @@ impl AudioGenerator for AREEnvelope {
             }
         }
     }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.ar_envelope.set_sample_rate(sample_rate);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::SAMPLE_RATE;
 
     #[test]
     fn test_ar_envelope_basic_operation() {
-        let mut env = AREnvelope::new();
+        let sample_rate = 44100.0;
+        let mut env = AREnvelope::new(sample_rate);
         env.set_attack_time(0.1); // 100ms attack
         env.set_release_time(0.2); // 200ms release
 
@@ -280,7 +291,8 @@ mod tests {
 
     #[test]
     fn test_ar_envelope_levels() {
-        let mut env = AREnvelope::new();
+        let sample_rate = 44100.0;
+        let mut env = AREnvelope::new(sample_rate);
         env.set_attack_time(0.01); // 10ms attack (441 samples at 44.1kHz)
         env.set_release_time(0.01); // 10ms release
 
@@ -332,7 +344,8 @@ mod tests {
 
         for &attack_curve in &curves {
             for &release_curve in &curves {
-                let mut env = AREnvelope::new();
+                let sample_rate = 44100.0;
+                let mut env = AREnvelope::new(sample_rate);
                 env.set_attack_time(attack_time);
                 env.set_release_time(release_time);
                 env.set_attack_curve(attack_curve);
@@ -366,8 +379,8 @@ mod tests {
                     }
                 }
 
-                let expected_attack_samples = (attack_time * SAMPLE_RATE) as u32;
-                let expected_release_samples = (release_time * SAMPLE_RATE) as u32;
+                let expected_attack_samples = (attack_time * sample_rate) as u32;
+                let expected_release_samples = (release_time * sample_rate) as u32;
 
                 println!("Curve {:?}/{:?}: attack {} samples (expected {}), release {} samples (expected {}), max level {}",
                     attack_curve, release_curve, samples_in_attack, expected_attack_samples,
