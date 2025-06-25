@@ -1,6 +1,7 @@
-use crate::audio::effects::{DelayLine, FDNReverb};
+use crate::audio::delays::DelayLine;
 use crate::audio::instruments::{KickDrum, SnareDrum};
 use crate::audio::modulators::SampleAndHold;
+use crate::audio::reverbs::FDNReverb;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, SAMPLE_RATE};
 
 pub struct Clock {
@@ -81,8 +82,6 @@ pub struct DrumMachine {
 
 impl DrumMachine {
     pub fn new() -> Self {
-        let delay_samples = (0.5 * SAMPLE_RATE) as usize; // 0.5 seconds max delay
-
         Self {
             kick: KickDrum::new(),
             snare: SnareDrum::new(),
@@ -97,7 +96,7 @@ impl DrumMachine {
             ],
 
             // Initialize effects
-            delay: DelayLine::new(delay_samples),
+            delay: DelayLine::new(0.5), // 0.5 seconds max delay
             reverb: FDNReverb::new(),
 
             // Default send levels

@@ -1,0 +1,165 @@
+use crate::audio::buffers::DelayBuffer;
+use crate::audio::filters::{OnePoleFilter, OnePoleMode};
+use crate::audio::sec_to_samples;
+use crate::audio::AudioProcessor;
+
+// Delay line with freeze functionality
+pub struct DelayLine {
+    buffer: DelayBuffer,
+    frozen: bool,
+    highpass: OnePoleFilter,
+    lowpass: OnePoleFilter,
+    feedback: f32,
+}
+
+impl DelayLine {
+    pub fn new(max_delay_seconds: f32) -> Self {
+        Self {
+            buffer: DelayBuffer::new(sec_to_samples(max_delay_seconds) as usize),
+            frozen: false,
+            highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass),
+            lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass),
+            feedback: 0.0,
+        }
+    }
+
+    pub fn set_freeze(&mut self, freeze: bool) {
+        self.frozen = freeze;
+    }
+
+    pub fn set_highpass_freq(&mut self, freq: f32) {
+        self.highpass.set_cutoff_frequency(freq);
+    }
+
+    pub fn set_lowpass_freq(&mut self, freq: f32) {
+        self.lowpass.set_cutoff_frequency(freq);
+    }
+
+    pub fn set_delay_seconds(&mut self, delay_seconds: f32) {
+        self.buffer.set_delay_seconds(delay_seconds);
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(-1.0, 1.0); // Allow feedback of 1.0
+    }
+
+    pub fn read(&mut self) -> f32 {
+        let delayed = self.buffer.read();
+
+        // Apply filters to delayed signal
+        let filtered = self.lowpass.process(self.highpass.process(delayed));
+        filtered
+    }
+
+    pub fn write(&mut self, input: f32, feedback: f32) {
+        self.buffer.write(input + feedback * self.feedback);
+    }
+}
+
+impl AudioProcessor for DelayLine {
+    fn process(&mut self, input: f32) -> f32 {
+        let filtered = self.read();
+        // Write to buffer only if not frozen
+        if !self.frozen {
+            self.write(input, filtered);
+        }
+
+        filtered
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::sec_to_samples;
+
+    #[test]
+    fn test_delay_line_basic_operation() {
+        let mut delay = DelayLine::new(100.0);
+        delay.set_delay_seconds(100.0 / sec_to_samples(1.0) as f32);
+        delay.set_feedback(0.0);
+
+        // Test silence with no input
+        assert_eq!(delay.process(0.0), 0.0);
+
+        // Test impulse response
+        let impulse_out = delay.process(1.0);
+        assert_eq!(impulse_out, 0.0); // First sample should be 0 (no delay yet)
+
+        // Process some samples to fill delay
+        for _ in 0..98 {
+            delay.process(0.0);
+        }
+
+        // Check for impulse in the next few samples (filters may cause slight delay)
+        let mut max_output = 0.0f32;
+        for _ in 0..10 {
+            let output = delay.process(0.0);
+            max_output = max_output.max(output.abs());
+        }
+
+        assert!(
+            max_output > 0.0,
+            "Should receive delayed impulse, max output: {}",
+            max_output
+        );
+
+        println!(
+            "DelayLine test: impulse {} -> max delayed output = {}",
+            1.0, max_output
+        );
+    }
+
+    #[test]
+    fn test_delay_line_feedback_one() {
+        let mut delay = DelayLine::new(1000.0);
+        let delay_seconds = 100.0 / sec_to_samples(1.0) as f32;
+        let feedback = 1.0; // Exactly 1.0 feedback
+
+        delay.set_delay_seconds(delay_seconds);
+        delay.set_feedback(feedback);
+
+        // Send an impulse
+        let impulse_output = delay.process(1.0);
+        assert_eq!(impulse_output, 0.0); // No immediate output
+
+        let mut max_amplitude = 0.0f32;
+        let mut outputs = Vec::new();
+
+        // Process for many samples to test unity feedback behavior
+        for i in 0..500 {
+            let output = delay.process(0.0);
+            outputs.push(output);
+            max_amplitude = max_amplitude.max(output.abs());
+
+            // Sample some outputs for debugging
+            if i < 20 || i % 50 == 0 {
+                println!("Sample {}: output = {:.6}", i, output);
+            }
+        }
+
+        println!(
+            "DelayLine feedback=1.0 test: max amplitude = {:.6}",
+            max_amplitude
+        );
+
+        // With feedback=1.0, the signal should be preserved (not grow indefinitely due to filters)
+        assert!(
+            max_amplitude > 0.1,
+            "DelayLine with feedback=1.0 should preserve signal, got max amplitude {:.6}",
+            max_amplitude
+        );
+
+        // Should not grow without bound (filters will limit it)
+        assert!(
+            max_amplitude < 5.0,
+            "DelayLine with feedback=1.0 should not grow excessively, got max amplitude {:.6}",
+            max_amplitude
+        );
+
+        // Signal should persist in later samples
+        let late_samples = &outputs[200..300];
+        let has_late_signal = late_samples.iter().any(|&x| x.abs() > 0.01);
+        assert!(has_late_signal, "Signal should persist with unity feedback");
+    }
+}

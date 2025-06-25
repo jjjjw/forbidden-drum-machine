@@ -1,9 +1,11 @@
-pub mod effects;
+pub mod buffers;
+pub mod delays;
 pub mod envelopes;
 pub mod filters;
 pub mod instruments;
 pub mod modulators;
 pub mod oscillators;
+pub mod reverbs;
 pub mod systems;
 
 pub const SAMPLE_RATE: f32 = 44100.0;
@@ -23,6 +25,6 @@ pub trait StereoAudioProcessor {
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32);
 }
 
-pub fn sec_to_samples(seconds: f32) -> f32 {
-    seconds * SAMPLE_RATE
+pub fn sec_to_samples(seconds: f32) -> u32 {
+    (seconds * SAMPLE_RATE).round() as u32
 }

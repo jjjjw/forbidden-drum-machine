@@ -66,8 +66,8 @@ impl AREnvelope {
     }
 
     fn calculate_parameters(&mut self) {
-        self.attack_samples = sec_to_samples(self.attack_time) as u32;
-        self.release_samples = sec_to_samples(self.release_time) as u32;
+        self.attack_samples = sec_to_samples(self.attack_time);
+        self.release_samples = sec_to_samples(self.release_time);
 
         self.attack_increment = if self.attack_samples > 0 {
             1.0 / self.attack_samples as f32

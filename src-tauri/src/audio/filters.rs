@@ -1,3 +1,4 @@
+use crate::audio::buffers::DelayBuffer;
 use crate::audio::{AudioProcessor, PI, SAMPLE_RATE};
 
 // Tan approximation function
@@ -179,5 +180,38 @@ impl AudioProcessor for OnePoleFilter {
             OnePoleMode::Lowpass => lowpass,
             OnePoleMode::Highpass => input - lowpass,
         }
+    }
+}
+
+// Allpass filter
+pub struct Allpass {
+    delay: DelayBuffer,
+    g: f32, // Feedback gain
+}
+
+impl Allpass {
+    pub fn new(max_delay_samples: usize) -> Self {
+        Self {
+            delay: DelayBuffer::new(max_delay_samples),
+            g: 0.0, // Default feedback gain
+        }
+    }
+
+    pub fn set_delay_seconds(&mut self, seconds: f32) {
+        self.delay.set_delay_seconds(seconds);
+    }
+
+    pub fn set_feedback(&mut self, g: f32) {
+        self.g = g.clamp(-0.99, 0.99); // Clamp to avoid instability
+    }
+}
+
+impl AudioProcessor for Allpass {
+    fn process(&mut self, input: f32) -> f32 {
+        let z = self.delay.read();
+        let x = input + z * self.g;
+        let y = z + x * -self.g;
+        self.delay.write(x);
+        y
     }
 }
