@@ -37,7 +37,7 @@ fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
     }
 }
 
-// Householder transform for feedback stage mixing
+// Householder transform for feedback stage mixing TODO: debug or use library
 fn householder_transform_8(signals: &mut [f32; 8]) {
     // Use Householder reflection with vector v = [1, 1, 1, 1, 1, 1, 1, 1]
     // H = I - 2vv^T / |v|^2
