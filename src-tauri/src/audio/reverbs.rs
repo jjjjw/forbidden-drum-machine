@@ -237,14 +237,14 @@ pub struct FDNReverb {
 // Design from https://signalsmith-audio.co.uk/writing/2021/lets-write-a-reverb/
 impl FDNReverb {
     pub fn new(sample_rate: f32) -> Self {
-        let feedback_stage = FeedbackStage::new(0.1, 0.2, sample_rate); // 100-200ms range
+        let feedback_stage = FeedbackStage::new(0.05, 0.150, sample_rate); // 50-150ms range
 
-        // Create 4 diffusion stages with delay times: 10-100ms
+        // Create 4 diffusion stages with delay times: 10-25ms and 25-50ms
         let diffusion_stages = [
-            DiffusionStage::new(0.01, 0.1, sample_rate),
-            DiffusionStage::new(0.01, 0.1, sample_rate),
-            DiffusionStage::new(0.01, 0.1, sample_rate),
-            DiffusionStage::new(0.01, 0.1, sample_rate),
+            DiffusionStage::new(0.01, 0.025, sample_rate),
+            DiffusionStage::new(0.01, 0.025, sample_rate),
+            DiffusionStage::new(0.025, 0.05, sample_rate),
+            DiffusionStage::new(0.025, 0.05, sample_rate),
         ];
 
         Self {
