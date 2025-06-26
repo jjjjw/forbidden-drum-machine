@@ -93,6 +93,14 @@ impl FilteredDelayLine {
     pub fn set_lowpass_freq(&mut self, freq: f32) {
         self.lowpass.set_cutoff_frequency(freq);
     }
+
+    pub fn read(&mut self) -> f32 {
+        self.delay_line.read()
+    }
+
+    pub fn write(&mut self, input: f32, output: f32) {
+        self.delay_line.write(input, output);
+    }
 }
 
 impl AudioProcessor for FilteredDelayLine {
@@ -116,7 +124,7 @@ impl AudioProcessor for FilteredDelayLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_delay_line_basic_operation() {
         let sample_rate = 44100.0;

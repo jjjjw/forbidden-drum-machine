@@ -37,21 +37,14 @@ fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
     }
 }
 
-// Householder transform for feedback stage mixing TODO: debug or use library
+// Householder transform for feedback stage mixing
 fn householder_transform_8(signals: &mut [f32; 8]) {
-    // Use Householder reflection with vector v = [1, 1, 1, 1, 1, 1, 1, 1]
-    // H = I - 2vv^T / |v|^2
     let sum: f32 = signals.iter().sum();
-    let reflection_coeff = 2.0 / 8.0; // 2 * |v|^2 / |v|^2 where |v|^2 = 8
+    let reflection_coeff = -2.0 / 8.0;
+    let reflection = sum * reflection_coeff;
 
     for i in 0..8 {
-        signals[i] = signals[i] - reflection_coeff * sum;
-    }
-
-    // Energy conservation normalization
-    let scale = 1.0 / (8.0f32).sqrt();
-    for i in 0..8 {
-        signals[i] *= scale;
+        signals[i] += reflection;
     }
 }
 
@@ -216,8 +209,8 @@ impl FeedbackStage {
             echoes[i] = self.delay_lines[i].read();
         }
 
-        // Apply Hadamard transform (TODO: Householder didn't work)
-        fast_hadamard_transform_8(&mut echoes);
+        // Apply Householder transform
+        householder_transform_8(&mut echoes);
 
         // Write diffusion input to delay lines with echoes feedback
         for i in 0..8 {
@@ -241,6 +234,7 @@ pub struct FDNReverb {
     feedback_stage: FeedbackStage,
 }
 
+// Design from https://signalsmith-audio.co.uk/writing/2021/lets-write-a-reverb/
 impl FDNReverb {
     pub fn new(sample_rate: f32) -> Self {
         let feedback_stage = FeedbackStage::new(0.1, 0.2, sample_rate); // 100-200ms range
@@ -290,12 +284,10 @@ impl StereoAudioProcessor for FDNReverb {
             .input_highcut_right
             .process(self.input_lowcut_right.process(right * 0.5));
 
-        // Distribute input across 8 channels
+        // Let reflections be the filtered input. Let the matrixes distribute left and right channels
         let mut reflections = [0.0f32; 8];
-        for i in 0..4 {
-            reflections[i * 2] = filtered_left;
-            reflections[i * 2 + 1] = filtered_right;
-        }
+        reflections[0] = filtered_left;
+        reflections[1] = filtered_right;
 
         // Process through 4 diffusion stages
         for stage in &mut self.diffusion_stages {
@@ -309,8 +301,8 @@ impl StereoAudioProcessor for FDNReverb {
         let mut out_left = 0.0;
         let mut out_right = 0.0;
         for i in 0..4 {
-            out_left += echoes[i * 2] + reflections[i * 2];
-            out_right += echoes[i * 2 + 1] + reflections[i * 2 + 1];
+            out_left += (echoes[i * 2] * 0.7) + (reflections[i * 2] * 0.3);
+            out_right += (echoes[i * 2 + 1] * 0.7) + (reflections[i * 2 + 1] * 0.3);
         }
 
         (out_left, out_right)
