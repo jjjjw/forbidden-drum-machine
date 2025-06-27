@@ -6,6 +6,7 @@ pub enum AudioCommand {
     SetBpm(f32),
     SetKickPattern([bool; 16]),
     SetSnarePattern([bool; 16]),
+    SetClapPattern([bool; 16]),
     TriggerKick,
     TriggerSnare,
     TriggerClap,

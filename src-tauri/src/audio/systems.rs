@@ -222,6 +222,7 @@ impl DrumMachine {
             AudioCommand::SetBpm(bpm) => self.set_bpm(bpm),
             AudioCommand::SetKickPattern(pattern) => self.set_kick_pattern(pattern),
             AudioCommand::SetSnarePattern(pattern) => self.set_snare_pattern(pattern),
+            AudioCommand::SetClapPattern(pattern) => self.set_clap_pattern(pattern),
             AudioCommand::TriggerKick => self.kick.trigger(),
             AudioCommand::TriggerSnare => self.snare.trigger(),
             AudioCommand::TriggerClap => self.clap.trigger(),

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { StepGrid } from "./components/StepGrid";
 import "./App.css";
 
@@ -29,23 +30,36 @@ function App() {
   const [snareAttack, setSnareAttack] = useState(0.001);
   const [snareRelease, setSnareRelease] = useState(0.08);
 
-  // Update current step and modulator values when audio is running
+  // Listen for step changes and modulator values from audio thread
   useEffect(() => {
-    if (!audioStarted) return;
-    
-    const interval = setInterval(async () => {
-      try {
-        const step = await invoke("get_current_step") as number;
-        setCurrentStep(step);
-        
-        const [delayTime, reverbSize, reverbDecay] = await invoke("get_modulator_values") as [number, number, number];
-        setModulatorValues({ delayTime, reverbSize, reverbDecay });
-      } catch (error) {
-        console.error("Error updating step/modulators:", error);
-      }
-    }, 50); // Update every 50ms for smooth animation
+    let stepUnlisten: (() => void) | null = null;
+    let modulatorUnlisten: (() => void) | null = null;
 
-    return () => clearInterval(interval);
+    const setupListeners = async () => {
+      try {
+        // Listen for step changes
+        stepUnlisten = await listen<number>("step_changed", (event) => {
+          setCurrentStep(event.payload);
+        });
+
+        // Listen for modulator value updates
+        modulatorUnlisten = await listen<[number, number, number]>("modulator_values", (event) => {
+          const [delayTime, reverbSize, reverbDecay] = event.payload;
+          setModulatorValues({ delayTime, reverbSize, reverbDecay });
+        });
+      } catch (error) {
+        console.error("Error setting up event listeners:", error);
+      }
+    };
+
+    if (audioStarted) {
+      setupListeners();
+    }
+
+    return () => {
+      if (stepUnlisten) stepUnlisten();
+      if (modulatorUnlisten) modulatorUnlisten();
+    };
   }, [audioStarted]);
 
   async function startAudio() {
