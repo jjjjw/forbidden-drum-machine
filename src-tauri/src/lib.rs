@@ -1,16 +1,24 @@
 mod audio;
 mod audio_output;
+mod commands;
 
 use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
 use audio::systems::DrumMachine;
 use audio_output::AudioOutput;
+use commands::{AudioCommand, AudioCommandQueue};
 
 // Global drum machine instance
 static DRUM_MACHINE: Lazy<Arc<Mutex<DrumMachine>>> = Lazy::new(|| {
     Arc::new(Mutex::new(DrumMachine::new(44100.0)))
 });
 
+// Global command queue for UI -> Audio communication
+static COMMAND_QUEUE: Lazy<AudioCommandQueue> = Lazy::new(|| {
+    AudioCommandQueue::new()
+});
+
+// Audio output handle
 static mut AUDIO_OUTPUT: Option<AudioOutput> = None;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -28,7 +36,8 @@ fn start_audio() -> Result<String, String> {
             std::thread::sleep(std::time::Duration::from_millis(100)); // Let it clean up
         }
         
-        match AudioOutput::new(DRUM_MACHINE.clone()) {
+        let command_receiver = COMMAND_QUEUE.receiver();
+        match AudioOutput::new(DRUM_MACHINE.clone(), command_receiver) {
             Ok(output) => {
                 AUDIO_OUTPUT = Some(output);
                 Ok("Audio started successfully".to_string())
@@ -37,6 +46,7 @@ fn start_audio() -> Result<String, String> {
         }
     }
 }
+
 
 #[tauri::command]
 #[allow(static_mut_refs)]
@@ -53,12 +63,9 @@ fn stop_audio() -> Result<String, String> {
 
 #[tauri::command] 
 fn set_bpm(bpm: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.set_bpm(bpm);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetBpm(bpm));
+    Ok(())
 }
 
 #[tauri::command]
@@ -67,14 +74,12 @@ fn set_kick_pattern(pattern: Vec<bool>) -> Result<(), String> {
         return Err("Pattern must be exactly 16 steps".to_string());
     }
     
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        let mut array_pattern = [false; 16];
-        array_pattern.copy_from_slice(&pattern);
-        drum_machine.set_kick_pattern(array_pattern);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let mut array_pattern = [false; 16];
+    array_pattern.copy_from_slice(&pattern);
+    
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetKickPattern(array_pattern));
+    Ok(())
 }
 
 #[tauri::command]
@@ -83,14 +88,12 @@ fn set_snare_pattern(pattern: Vec<bool>) -> Result<(), String> {
         return Err("Pattern must be exactly 16 steps".to_string());
     }
     
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        let mut array_pattern = [false; 16];
-        array_pattern.copy_from_slice(&pattern);
-        drum_machine.set_snare_pattern(array_pattern);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let mut array_pattern = [false; 16];
+    array_pattern.copy_from_slice(&pattern);
+    
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetSnarePattern(array_pattern));
+    Ok(())
 }
 
 #[tauri::command]
@@ -116,72 +119,51 @@ fn get_modulator_values() -> Result<(f32, f32, f32), String> {
 
 #[tauri::command]
 fn set_delay_send(send: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.set_delay_send(send);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetDelaySend(send));
+    Ok(())
 }
 
 #[tauri::command]
 fn set_reverb_send(send: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.set_reverb_send(send);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetReverbSend(send));
+    Ok(())
 }
 
 #[tauri::command]
 fn set_delay_freeze(freeze: bool) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.set_delay_freeze(freeze);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetDelayFreeze(freeze));
+    Ok(())
 }
 
 #[tauri::command]
 fn set_kick_attack(attack: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.get_kick().set_amp_attack(attack);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetKickAmpAttack(attack));
+    Ok(())
 }
 
 #[tauri::command]
 fn set_kick_release(release: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.get_kick().set_amp_release(release);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetKickAmpRelease(release));
+    Ok(())
 }
 
 #[tauri::command]
 fn set_snare_attack(attack: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.get_snare().set_amp_attack(attack);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetSnareAmpAttack(attack));
+    Ok(())
 }
 
 #[tauri::command]
 fn set_snare_release(release: f32) -> Result<(), String> {
-    if let Ok(mut drum_machine) = DRUM_MACHINE.try_lock() {
-        drum_machine.get_snare().set_amp_release(release);
-        Ok(())
-    } else {
-        Err("Could not access drum machine".to_string())
-    }
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetSnareAmpRelease(release));
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -190,7 +172,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet, 
-            start_audio, 
+            start_audio,
             stop_audio,
             set_bpm, 
             set_kick_pattern, 

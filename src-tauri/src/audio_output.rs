@@ -1,4 +1,5 @@
 use crate::audio::systems::DrumMachine;
+use crate::commands::AudioCommandReceiver;
 use cpal::{traits::*, Sample};
 use std::sync::{Arc, Mutex};
 
@@ -7,7 +8,10 @@ pub struct AudioOutput {
 }
 
 impl AudioOutput {
-    pub fn new(drum_machine: Arc<Mutex<DrumMachine>>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        drum_machine: Arc<Mutex<DrumMachine>>,
+        command_receiver: AudioCommandReceiver,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -24,9 +28,15 @@ impl AudioOutput {
         }
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => Self::run::<f32>(&device, &config.into(), drum_machine)?,
-            cpal::SampleFormat::I16 => Self::run::<i16>(&device, &config.into(), drum_machine)?,
-            cpal::SampleFormat::U16 => Self::run::<u16>(&device, &config.into(), drum_machine)?,
+            cpal::SampleFormat::F32 => {
+                Self::run::<f32>(&device, &config.into(), drum_machine, command_receiver)?
+            }
+            cpal::SampleFormat::I16 => {
+                Self::run::<i16>(&device, &config.into(), drum_machine, command_receiver)?
+            }
+            cpal::SampleFormat::U16 => {
+                Self::run::<u16>(&device, &config.into(), drum_machine, command_receiver)?
+            }
             _ => return Err("Unsupported sample format".into()),
         };
 
@@ -39,6 +49,7 @@ impl AudioOutput {
         device: &cpal::Device,
         config: &cpal::StreamConfig,
         drum_machine: Arc<Mutex<DrumMachine>>,
+        command_receiver: AudioCommandReceiver,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         T: Sample + cpal::SizedSample + cpal::FromSample<f32>,
@@ -48,35 +59,46 @@ impl AudioOutput {
         let stream = device.build_output_stream(
             config,
             move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                for frame in data.chunks_mut(channels) {
-                    let (left, right) = if let Ok(mut drum_machine) = drum_machine.try_lock() {
-                        let sample = drum_machine.next_sample();
-                        sample
-                    } else {
-                        (0.0, 0.0)
-                    };
+                // Try to get the lock once for the entire buffer
+                if let Ok(mut drum_machine) = drum_machine.try_lock() {
+                    // Process pending commands at the start of the buffer
+                    command_receiver.process_commands(|command| {
+                        drum_machine.apply_command(command);
+                    });
+                    
+                    // Process all frames while holding the lock
+                    for frame in data.chunks_mut(channels) {
+                        let (left, right) = drum_machine.next_sample();
 
-                    // Limiting and NaN protection
-                    let left = if left.is_finite() {
-                        left.clamp(-0.95, 0.95)
-                    } else {
-                        0.0
-                    };
-                    let right = if right.is_finite() {
-                        right.clamp(-0.95, 0.95)
-                    } else {
-                        0.0
-                    };
+                        // Limiting and NaN protection
+                        let left = if left.is_finite() {
+                            left.clamp(-0.95, 0.95)
+                        } else {
+                            0.0
+                        };
+                        let right = if right.is_finite() {
+                            right.clamp(-0.95, 0.95)
+                        } else {
+                            0.0
+                        };
 
-                    if channels >= 2 {
-                        frame[0] = T::from_sample(left);
-                        frame[1] = T::from_sample(right);
-                    } else {
-                        frame[0] = T::from_sample((left + right) * 0.5);
+                        if channels >= 2 {
+                            frame[0] = T::from_sample(left);
+                            frame[1] = T::from_sample(right);
+                        } else {
+                            frame[0] = T::from_sample((left + right) * 0.5);
+                        }
+
+                        for sample in frame.iter_mut().skip(2) {
+                            *sample = T::from_sample(0.0);
+                        }
                     }
-
-                    for sample in frame.iter_mut().skip(2) {
-                        *sample = T::from_sample(0.0);
+                } else {
+                    // Could not get lock - output silence to avoid audio artifacts
+                    for frame in data.chunks_mut(channels) {
+                        for sample in frame.iter_mut() {
+                            *sample = T::from_sample(0.0);
+                        }
                     }
                 }
             },

@@ -1,8 +1,9 @@
 use crate::audio::delays::FilteredDelayLine;
-use crate::audio::instruments::{KickDrum, SnareDrum};
+use crate::audio::instruments::{KickDrum, SnareDrum, ClapDrum};
 use crate::audio::modulators::SampleAndHold;
 use crate::audio::reverbs::FDNReverb;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
+use crate::commands::AudioCommand;
 
 pub struct Clock {
     bpm: f32,
@@ -64,9 +65,11 @@ impl Clock {
 pub struct DrumMachine {
     kick: KickDrum,
     snare: SnareDrum,
+    clap: ClapDrum,
     clock: Clock,
     kick_pattern: [bool; 16],
     snare_pattern: [bool; 16],
+    clap_pattern: [bool; 16],
 
     // Effects chain
     delay: FilteredDelayLine,
@@ -87,6 +90,7 @@ impl DrumMachine {
         Self {
             kick: KickDrum::new(sample_rate),
             snare: SnareDrum::new(sample_rate),
+            clap: ClapDrum::new(sample_rate),
             clock: Clock::new(120.0, sample_rate),
             kick_pattern: [
                 true, false, false, false, false, false, true, false, false, false, false, false,
@@ -95,6 +99,10 @@ impl DrumMachine {
             snare_pattern: [
                 false, false, false, false, true, false, false, false, false, false, false, false,
                 true, false, false, false,
+            ],
+            clap_pattern: [
+                false, false, true, false, false, false, false, false, false, false, true, false,
+                false, false, false, false,
             ],
 
             // Initialize effects
@@ -120,6 +128,7 @@ impl DrumMachine {
         // Update all audio components to use the new sample rate
         self.kick.set_sample_rate(sample_rate);
         self.snare.set_sample_rate(sample_rate);
+        self.clap.set_sample_rate(sample_rate);
         self.delay.set_sample_rate(sample_rate);
         self.reverb.set_sample_rate(sample_rate);
         self.delay_time_mod.set_sample_rate(sample_rate);
@@ -139,6 +148,10 @@ impl DrumMachine {
         self.snare_pattern = pattern;
     }
 
+    pub fn set_clap_pattern(&mut self, pattern: [bool; 16]) {
+        self.clap_pattern = pattern;
+    }
+
     pub fn next_sample(&mut self) -> (f32, f32) {
         if let Some(step) = self.clock.tick() {
             if self.kick_pattern[step as usize] {
@@ -146,6 +159,9 @@ impl DrumMachine {
             }
             if self.snare_pattern[step as usize] {
                 self.snare.trigger();
+            }
+            if self.clap_pattern[step as usize] {
+                self.clap.trigger();
             }
         }
 
@@ -161,7 +177,8 @@ impl DrumMachine {
         // Generate dry drum samples
         let kick_sample = self.kick.next_sample();
         let snare_sample = self.snare.next_sample();
-        let dry_mixed = kick_sample + snare_sample;
+        let clap_sample = self.clap.next_sample();
+        let dry_mixed = kick_sample + snare_sample + clap_sample;
 
         // Create sends to effects
         let delay_input = dry_mixed * self.delay_send;
@@ -185,12 +202,53 @@ impl DrumMachine {
         (output_l, output_r)
     }
 
+    /// Process a block of samples (more efficient than sample-by-sample)
+    /// Returns stereo interleaved samples [L, R, L, R, ...]
+    pub fn process_block(&mut self, block_size: usize) -> Vec<f32> {
+        let mut output = Vec::with_capacity(block_size * 2);
+        
+        for _ in 0..block_size {
+            let (left, right) = self.next_sample();
+            output.push(left);
+            output.push(right);
+        }
+        
+        output
+    }
+
+    /// Apply a single command to the drum machine
+    pub fn apply_command(&mut self, command: AudioCommand) {
+        match command {
+            AudioCommand::SetBpm(bpm) => self.set_bpm(bpm),
+            AudioCommand::SetKickPattern(pattern) => self.set_kick_pattern(pattern),
+            AudioCommand::SetSnarePattern(pattern) => self.set_snare_pattern(pattern),
+            AudioCommand::TriggerKick => self.kick.trigger(),
+            AudioCommand::TriggerSnare => self.snare.trigger(),
+            AudioCommand::TriggerClap => self.clap.trigger(),
+            AudioCommand::SetKickAmpAttack(time) => self.kick.set_amp_attack(time),
+            AudioCommand::SetKickAmpRelease(time) => self.kick.set_amp_release(time),
+            AudioCommand::SetSnareAmpAttack(time) => self.snare.set_amp_attack(time),
+            AudioCommand::SetSnareAmpRelease(time) => self.snare.set_amp_release(time),
+            AudioCommand::SetDelaySend(send) => self.set_delay_send(send),
+            AudioCommand::SetReverbSend(send) => self.set_reverb_send(send),
+            AudioCommand::SetDelayFreeze(freeze) => self.set_delay_freeze(freeze),
+            AudioCommand::SetDelayHighpass(freq) => self.set_delay_highpass(freq),
+            AudioCommand::SetDelayLowpass(freq) => self.set_delay_lowpass(freq),
+            AudioCommand::SetReverbSize(size) => self.set_reverb_size(size),
+            AudioCommand::SetReverbDecay(decay) => self.set_reverb_decay(decay),
+        }
+    }
+
     pub fn get_kick(&mut self) -> &mut KickDrum {
         &mut self.kick
     }
 
     pub fn get_snare(&mut self) -> &mut SnareDrum {
         &mut self.snare
+    }
+
+    pub fn get_clap(&mut self) -> &mut ClapDrum {
+        &mut self.clap
     }
 
     // Effects control methods
