@@ -1,4 +1,3 @@
-
 // Integer delay buffer
 pub struct DelayBuffer {
     buffer: Vec<f32>,
@@ -19,18 +18,22 @@ impl DelayBuffer {
         self.buffer.len()
     }
 
-
     pub fn set_delay_samples(&mut self, samples: usize) {
         self.delay_samples = samples.max(0).min(self.buffer.len() - 1);
     }
 
-    pub fn read(&self) -> f32 {
-        let read_pos = if self.delay_samples <= self.write_pos {
-            self.write_pos - self.delay_samples
+    pub fn read_at(&self, delay_samples: usize) -> f32 {
+        let delay_samples = delay_samples.max(0).min(self.buffer.len() - 1);
+        let read_pos = if delay_samples <= self.write_pos {
+            self.write_pos - delay_samples
         } else {
-            self.buffer.len() - (self.delay_samples - self.write_pos)
+            self.buffer.len() - (delay_samples - self.write_pos)
         };
         self.buffer[read_pos]
+    }
+
+    pub fn read(&self) -> f32 {
+        self.read_at(self.delay_samples)
     }
 
     pub fn write(&mut self, value: f32) {

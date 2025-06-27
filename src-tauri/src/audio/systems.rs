@@ -203,7 +203,7 @@ impl DrumMachine {
     }
 
     pub fn set_delay_freeze(&mut self, freeze: bool) {
-        // self.delay.set_freeze(freeze);
+        self.delay.set_freeze(freeze);
     }
 
     pub fn set_delay_highpass(&mut self, freq: f32) {

@@ -11,6 +11,7 @@ static SINE_TABLE: Lazy<Vec<f32>> = Lazy::new(|| {
 
 pub struct PhaseGenerator {
     phase: f32,
+    phase_increment: f32,
     frequency: f32,
     sample_rate: f32,
 }
@@ -21,15 +22,18 @@ impl PhaseGenerator {
             phase: 0.0,
             frequency: frequency,
             sample_rate,
+            phase_increment: frequency / sample_rate,
         }
     }
 
     pub fn set_frequency(&mut self, frequency: f32) {
         self.frequency = frequency;
+        self.phase_increment = frequency / self.sample_rate;
     }
 
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
+        self.phase_increment = self.frequency / sample_rate;
     }
 
     pub fn reset(&mut self) {
@@ -38,7 +42,7 @@ impl PhaseGenerator {
 
     pub fn next_sample(&mut self) -> f32 {
         let sample = self.phase;
-        self.phase += self.frequency / self.sample_rate;
+        self.phase += self.phase_increment;
 
         if self.phase >= 1.0 {
             self.phase -= 1.0;

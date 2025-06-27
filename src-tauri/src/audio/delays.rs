@@ -37,6 +37,11 @@ impl DelayLine {
         self.buffer.read()
     }
 
+    pub fn read_at(&self, delay_seconds: f32) -> f32 {
+        let delay_samples = (delay_seconds * self.sample_rate) as usize;
+        self.buffer.read_at(delay_samples)
+    }
+
     pub fn write(&mut self, input: f32, feedback: f32) {
         self.buffer.write(input + feedback * self.feedback);
     }
@@ -96,6 +101,10 @@ impl FilteredDelayLine {
 
     pub fn read(&mut self) -> f32 {
         self.delay_line.read()
+    }
+
+    pub fn read_at(&self, delay_seconds: f32) -> f32 {
+        self.delay_line.read_at(delay_seconds)
     }
 
     pub fn write(&mut self, input: f32, output: f32) {
