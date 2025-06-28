@@ -7,6 +7,10 @@ use crate::commands::AudioCommand;
 use crate::events::{AudioEvent, AudioEventSender};
 use crate::sequencing::{BiasedClock, MarkovChain};
 
+// Calculate the number of samples for 4 beats based on BPM and sample rate
+fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
+    (60.0 / bpm * sample_rate) as u32 * 4
+}
 
 pub struct DrumMachine {
     kick: KickDrum,
@@ -38,13 +42,15 @@ pub struct DrumMachine {
     delay_time_mod: SampleAndHold,
     reverb_size_mod: SampleAndHold,
     reverb_decay_mod: SampleAndHold,
+    sample_rate: f32,
 }
 
 impl DrumMachine {
     pub fn new(sample_rate: f32, event_sender: AudioEventSender) -> Self {
         // Initialize clocks and Markov generator
-        let kick_clock = BiasedClock::new(120.0, sample_rate, 0.5); // Neutral bias initially
-        let clap_clock = BiasedClock::new(120.0, sample_rate, 0.5); // Neutral bias initially
+        let total_samples_in_loop = bpm_to_samples(120.0, sample_rate);
+        let kick_clock = BiasedClock::new(total_samples_in_loop, 16, 0.5); // Neutral bias initially
+        let clap_clock = BiasedClock::new(total_samples_in_loop, 16, 0.5); // Neutral bias initially
         let markov_generator = MarkovChain::new(0.3); // 30% density
 
         Self {
@@ -79,6 +85,8 @@ impl DrumMachine {
             delay_send: 0.2,
             reverb_send: 0.3,
 
+            sample_rate,
+
             // Initialize modulators with slower rates and configurable slew
             delay_time_mod: SampleAndHold::new(0.125, 0.1, 0.5, 150.0, sample_rate), // 8 sec updates, 150ms slew
             reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0, sample_rate), // 6 sec updates, 200ms slew
@@ -87,11 +95,13 @@ impl DrumMachine {
     }
 
     pub fn set_bpm(&mut self, bpm: f32) {
-        self.kick_clock.set_bpm(bpm);
-        self.clap_clock.set_bpm(bpm);
+        let total_samples_in_loop = bpm_to_samples(bpm, self.sample_rate);
+        self.kick_clock.set_total_samples(total_samples_in_loop);
+        self.clap_clock.set_total_samples(total_samples_in_loop);
     }
 
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
         // Update all audio components to use the new sample rate
         self.kick.set_sample_rate(sample_rate);
         self.clap.set_sample_rate(sample_rate);
@@ -100,10 +110,6 @@ impl DrumMachine {
         self.delay_time_mod.set_sample_rate(sample_rate);
         self.reverb_size_mod.set_sample_rate(sample_rate);
         self.reverb_decay_mod.set_sample_rate(sample_rate);
-
-        // Update the clocks as well
-        self.kick_clock.set_sample_rate(sample_rate);
-        self.clap_clock.set_sample_rate(sample_rate);
     }
 
     pub fn set_kick_pattern(&mut self, pattern: [bool; 16]) {
@@ -123,20 +129,20 @@ impl DrumMachine {
                 self.send_event(AudioEvent::KickStepChanged(step));
                 self.emit_modulator_values();
             }
-            
+
             if self.kick_pattern[step as usize] {
                 self.kick.trigger();
             }
         }
 
-        // Handle clap drum with biased clock and step sequencing  
+        // Handle clap drum with biased clock and step sequencing
         if let Some(step) = self.clap_clock.tick() {
             // Check if this is a new step and emit event
             if self.prev_clap_step.map_or(true, |prev| prev != step) {
                 self.prev_clap_step = Some(step);
                 self.send_event(AudioEvent::ClapStepChanged(step));
             }
-            
+
             if self.clap_pattern[step as usize] {
                 self.clap.trigger();
             }
@@ -274,9 +280,12 @@ impl DrumMachine {
         let delay_time = self.get_current_delay_time();
         let reverb_size = self.get_current_reverb_size();
         let reverb_decay = self.get_current_reverb_decay();
-        self.send_event(AudioEvent::ModulatorValues(delay_time, reverb_size, reverb_decay));
+        self.send_event(AudioEvent::ModulatorValues(
+            delay_time,
+            reverb_size,
+            reverb_decay,
+        ));
     }
-
 
     // Markov generation controls
     pub fn set_markov_density(&mut self, density: f32) {
@@ -285,16 +294,24 @@ impl DrumMachine {
 
     pub fn generate_kick_pattern(&mut self) {
         // Generate new kick pattern using Markov chain
-        self.kick_pattern = self.markov_generator.generate_sequence(16).try_into().unwrap();
-        
+        self.kick_pattern = self
+            .markov_generator
+            .generate_sequence(16)
+            .try_into()
+            .unwrap();
+
         // Send event to UI
         self.send_event(AudioEvent::KickPatternGenerated(self.kick_pattern));
     }
 
     pub fn generate_clap_pattern(&mut self) {
         // Generate new clap pattern using Markov chain
-        self.clap_pattern = self.markov_generator.generate_sequence(16).try_into().unwrap();
-        
+        self.clap_pattern = self
+            .markov_generator
+            .generate_sequence(16)
+            .try_into()
+            .unwrap();
+
         // Send event to UI
         self.send_event(AudioEvent::ClapPatternGenerated(self.clap_pattern));
     }
