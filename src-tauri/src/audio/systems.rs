@@ -1,75 +1,30 @@
 use crate::audio::delays::FilteredDelayLine;
-use crate::audio::instruments::{KickDrum, SnareDrum, ClapDrum};
+use crate::audio::instruments::{ClapDrum, KickDrum};
 use crate::audio::modulators::SampleAndHold;
 use crate::audio::reverbs::FDNReverb;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 use crate::commands::AudioCommand;
+use crate::events::{AudioEvent, AudioEventSender};
+use crate::sequencing::{BiasedClock, MarkovChain};
 
-pub struct Clock {
-    bpm: f32,
-    samples_per_beat: u32,
-    current_sample: u32,
-    step: u8,
-    steps_per_bar: u8,
-    sample_rate: f32,
-}
-
-impl Clock {
-    pub fn new(bpm: f32, sample_rate: f32) -> Self {
-        let mut clock = Self {
-            bpm,
-            samples_per_beat: 0,
-            current_sample: 0,
-            step: 0,
-            steps_per_bar: 16,
-            sample_rate,
-        };
-        clock.calculate_timing();
-        clock
-    }
-
-    pub fn set_bpm(&mut self, bpm: f32) {
-        self.bpm = bpm;
-        self.calculate_timing();
-    }
-
-    pub fn calculate_timing(&mut self) {
-        let beats_per_second = self.bpm / 60.0;
-        let steps_per_second = beats_per_second * (self.steps_per_bar as f32 / 4.0);
-        self.samples_per_beat = (self.sample_rate / steps_per_second) as u32;
-    }
-
-    pub fn tick(&mut self) -> Option<u8> {
-        self.current_sample += 1;
-
-        if self.current_sample >= self.samples_per_beat {
-            self.current_sample = 0;
-            let current_step = self.step;
-            self.step = (self.step + 1) % self.steps_per_bar;
-            Some(current_step)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_current_step(&self) -> u8 {
-        self.step
-    }
-
-    pub fn reset(&mut self) {
-        self.current_sample = 0;
-        self.step = 0;
-    }
-}
 
 pub struct DrumMachine {
     kick: KickDrum,
-    snare: SnareDrum,
     clap: ClapDrum,
-    clock: Clock,
+    kick_clock: BiasedClock,
+    clap_clock: BiasedClock,
     kick_pattern: [bool; 16],
-    snare_pattern: [bool; 16],
     clap_pattern: [bool; 16],
+
+    // Markov chain for generating patterns
+    markov_generator: MarkovChain,
+
+    // Event sender for communicating with UI
+    event_sender: AudioEventSender,
+
+    // Track previous steps for event emission
+    prev_kick_step: Option<u8>,
+    prev_clap_step: Option<u8>,
 
     // Effects chain
     delay: FilteredDelayLine,
@@ -86,24 +41,35 @@ pub struct DrumMachine {
 }
 
 impl DrumMachine {
-    pub fn new(sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32, event_sender: AudioEventSender) -> Self {
+        // Initialize clocks and Markov generator
+        let kick_clock = BiasedClock::new(120.0, sample_rate, 0.5); // Neutral bias initially
+        let clap_clock = BiasedClock::new(120.0, sample_rate, 0.5); // Neutral bias initially
+        let markov_generator = MarkovChain::new(0.3); // 30% density
+
         Self {
             kick: KickDrum::new(sample_rate),
-            snare: SnareDrum::new(sample_rate),
             clap: ClapDrum::new(sample_rate),
-            clock: Clock::new(120.0, sample_rate),
+            kick_clock,
+            clap_clock,
             kick_pattern: [
                 true, false, false, false, false, false, true, false, false, false, false, false,
                 false, false, true, false,
             ],
-            snare_pattern: [
+            clap_pattern: [
                 false, false, false, false, true, false, false, false, false, false, false, false,
                 true, false, false, false,
             ],
-            clap_pattern: [
-                false, false, true, false, false, false, false, false, false, false, true, false,
-                false, false, false, false,
-            ],
+
+            // Markov generator
+            markov_generator,
+
+            // Event sender
+            event_sender,
+
+            // Initialize step tracking
+            prev_kick_step: None,
+            prev_clap_step: None,
 
             // Initialize effects
             delay: FilteredDelayLine::new(0.5, sample_rate), // 0.5 seconds max delay
@@ -121,13 +87,13 @@ impl DrumMachine {
     }
 
     pub fn set_bpm(&mut self, bpm: f32) {
-        self.clock.set_bpm(bpm);
+        self.kick_clock.set_bpm(bpm);
+        self.clap_clock.set_bpm(bpm);
     }
 
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         // Update all audio components to use the new sample rate
         self.kick.set_sample_rate(sample_rate);
-        self.snare.set_sample_rate(sample_rate);
         self.clap.set_sample_rate(sample_rate);
         self.delay.set_sample_rate(sample_rate);
         self.reverb.set_sample_rate(sample_rate);
@@ -135,17 +101,13 @@ impl DrumMachine {
         self.reverb_size_mod.set_sample_rate(sample_rate);
         self.reverb_decay_mod.set_sample_rate(sample_rate);
 
-        // Update the clock as well (it has sample rate for timing calculations)
-        self.clock.sample_rate = sample_rate;
-        self.clock.calculate_timing();
+        // Update the clocks as well
+        self.kick_clock.set_sample_rate(sample_rate);
+        self.clap_clock.set_sample_rate(sample_rate);
     }
 
     pub fn set_kick_pattern(&mut self, pattern: [bool; 16]) {
         self.kick_pattern = pattern;
-    }
-
-    pub fn set_snare_pattern(&mut self, pattern: [bool; 16]) {
-        self.snare_pattern = pattern;
     }
 
     pub fn set_clap_pattern(&mut self, pattern: [bool; 16]) {
@@ -153,13 +115,28 @@ impl DrumMachine {
     }
 
     pub fn next_sample(&mut self) -> (f32, f32) {
-        if let Some(step) = self.clock.tick() {
+        // Handle kick drum with biased clock and step sequencing
+        if let Some(step) = self.kick_clock.tick() {
+            // Check if this is a new step and emit event
+            if self.prev_kick_step.map_or(true, |prev| prev != step) {
+                self.prev_kick_step = Some(step);
+                self.send_event(AudioEvent::KickStepChanged(step));
+                self.emit_modulator_values();
+            }
+            
             if self.kick_pattern[step as usize] {
                 self.kick.trigger();
             }
-            if self.snare_pattern[step as usize] {
-                self.snare.trigger();
+        }
+
+        // Handle clap drum with biased clock and step sequencing  
+        if let Some(step) = self.clap_clock.tick() {
+            // Check if this is a new step and emit event
+            if self.prev_clap_step.map_or(true, |prev| prev != step) {
+                self.prev_clap_step = Some(step);
+                self.send_event(AudioEvent::ClapStepChanged(step));
             }
+            
             if self.clap_pattern[step as usize] {
                 self.clap.trigger();
             }
@@ -176,9 +153,8 @@ impl DrumMachine {
 
         // Generate dry drum samples
         let kick_sample = self.kick.next_sample();
-        let snare_sample = self.snare.next_sample();
         let clap_sample = self.clap.next_sample();
-        let dry_mixed = kick_sample + snare_sample + clap_sample;
+        let dry_mixed = kick_sample + clap_sample;
 
         // Create sends to effects
         let delay_input = dry_mixed * self.delay_send;
@@ -206,13 +182,13 @@ impl DrumMachine {
     /// Returns stereo interleaved samples [L, R, L, R, ...]
     pub fn process_block(&mut self, block_size: usize) -> Vec<f32> {
         let mut output = Vec::with_capacity(block_size * 2);
-        
+
         for _ in 0..block_size {
             let (left, right) = self.next_sample();
             output.push(left);
             output.push(right);
         }
-        
+
         output
     }
 
@@ -221,15 +197,9 @@ impl DrumMachine {
         match command {
             AudioCommand::SetBpm(bpm) => self.set_bpm(bpm),
             AudioCommand::SetKickPattern(pattern) => self.set_kick_pattern(pattern),
-            AudioCommand::SetSnarePattern(pattern) => self.set_snare_pattern(pattern),
             AudioCommand::SetClapPattern(pattern) => self.set_clap_pattern(pattern),
-            AudioCommand::TriggerKick => self.kick.trigger(),
-            AudioCommand::TriggerSnare => self.snare.trigger(),
-            AudioCommand::TriggerClap => self.clap.trigger(),
             AudioCommand::SetKickAmpAttack(time) => self.kick.set_amp_attack(time),
             AudioCommand::SetKickAmpRelease(time) => self.kick.set_amp_release(time),
-            AudioCommand::SetSnareAmpAttack(time) => self.snare.set_amp_attack(time),
-            AudioCommand::SetSnareAmpRelease(time) => self.snare.set_amp_release(time),
             AudioCommand::SetDelaySend(send) => self.set_delay_send(send),
             AudioCommand::SetReverbSend(send) => self.set_reverb_send(send),
             AudioCommand::SetDelayFreeze(freeze) => self.set_delay_freeze(freeze),
@@ -237,15 +207,16 @@ impl DrumMachine {
             AudioCommand::SetDelayLowpass(freq) => self.set_delay_lowpass(freq),
             AudioCommand::SetReverbSize(size) => self.set_reverb_size(size),
             AudioCommand::SetReverbDecay(decay) => self.set_reverb_decay(decay),
+            AudioCommand::SetClapDensity(density) => self.set_markov_density(density),
+            AudioCommand::SetKickClockBias(bias) => self.set_kick_clock_bias(bias),
+            AudioCommand::SetClapClockBias(bias) => self.set_clap_clock_bias(bias),
+            AudioCommand::GenerateKickPattern => self.generate_kick_pattern(),
+            AudioCommand::GenerateClapPattern => self.generate_clap_pattern(),
         }
     }
 
     pub fn get_kick(&mut self) -> &mut KickDrum {
         &mut self.kick
-    }
-
-    pub fn get_snare(&mut self) -> &mut SnareDrum {
-        &mut self.snare
     }
 
     pub fn get_clap(&mut self) -> &mut ClapDrum {
@@ -295,7 +266,58 @@ impl DrumMachine {
     }
 
     pub fn get_current_step(&self) -> u8 {
-        self.clock.get_current_step()
+        // Use kick clock as the main step reference
+        self.kick_clock.get_current_step()
+    }
+
+    fn emit_modulator_values(&self) {
+        let delay_time = self.get_current_delay_time();
+        let reverb_size = self.get_current_reverb_size();
+        let reverb_decay = self.get_current_reverb_decay();
+        self.send_event(AudioEvent::ModulatorValues(delay_time, reverb_size, reverb_decay));
+    }
+
+
+    // Markov generation controls
+    pub fn set_markov_density(&mut self, density: f32) {
+        self.markov_generator.set_density(density);
+    }
+
+    pub fn generate_kick_pattern(&mut self) {
+        // Generate new kick pattern using Markov chain
+        self.kick_pattern = self.markov_generator.generate_sequence(16).try_into().unwrap();
+        
+        // Send event to UI
+        self.send_event(AudioEvent::KickPatternGenerated(self.kick_pattern));
+    }
+
+    pub fn generate_clap_pattern(&mut self) {
+        // Generate new clap pattern using Markov chain
+        self.clap_pattern = self.markov_generator.generate_sequence(16).try_into().unwrap();
+        
+        // Send event to UI
+        self.send_event(AudioEvent::ClapPatternGenerated(self.clap_pattern));
+    }
+
+    fn send_event(&self, event: AudioEvent) {
+        self.event_sender.send(event);
+    }
+
+    pub fn get_kick_pattern(&self) -> [bool; 16] {
+        self.kick_pattern
+    }
+
+    pub fn get_clap_pattern(&self) -> [bool; 16] {
+        self.clap_pattern
+    }
+
+    // Clock bias controls
+    pub fn set_kick_clock_bias(&mut self, bias: f32) {
+        self.kick_clock.set_bias(bias);
+    }
+
+    pub fn set_clap_clock_bias(&mut self, bias: f32) {
+        self.clap_clock.set_bias(bias);
     }
 }
 
@@ -306,7 +328,10 @@ mod tests {
     #[test]
     fn test_audio_output_one_bar() {
         let sample_rate = 44100.0;
-        let mut drum_machine = DrumMachine::new(sample_rate);
+        // Create a mock event queue for testing
+        let event_queue = crate::events::AudioEventQueue::new();
+        let event_sender = event_queue.sender();
+        let mut drum_machine = DrumMachine::new(sample_rate, event_sender);
         drum_machine.set_bpm(120.0);
 
         // Calculate samples for one bar (16 steps at 120 BPM)

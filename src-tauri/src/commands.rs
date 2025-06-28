@@ -5,15 +5,9 @@ use std::sync::Arc;
 pub enum AudioCommand {
     SetBpm(f32),
     SetKickPattern([bool; 16]),
-    SetSnarePattern([bool; 16]),
     SetClapPattern([bool; 16]),
-    TriggerKick,
-    TriggerSnare,
-    TriggerClap,
     SetKickAmpAttack(f32),
     SetKickAmpRelease(f32),
-    SetSnareAmpAttack(f32),
-    SetSnareAmpRelease(f32),
     SetDelaySend(f32),
     SetReverbSend(f32),
     SetDelayFreeze(bool),
@@ -21,6 +15,11 @@ pub enum AudioCommand {
     SetDelayLowpass(f32),
     SetReverbSize(f32),
     SetReverbDecay(f32),
+    SetClapDensity(f32),
+    SetKickClockBias(f32),
+    SetClapClockBias(f32),
+    GenerateKickPattern,
+    GenerateClapPattern,
 }
 
 /// Lock-free command queue for audio parameter changes
@@ -78,9 +77,9 @@ pub struct AudioCommandReceiver {
 impl AudioCommandReceiver {
     /// Process all pending commands, applying them to the drum machine
     /// This should be called at the start of each audio block
-    pub fn process_commands<F>(&self, mut apply_command: F) 
-    where 
-        F: FnMut(AudioCommand)
+    pub fn process_commands<F>(&self, mut apply_command: F)
+    where
+        F: FnMut(AudioCommand),
     {
         // Process up to 64 commands per audio block to avoid spending too much time
         // in command processing during the audio callback

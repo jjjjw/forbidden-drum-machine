@@ -1,5 +1,6 @@
 use crate::audio::systems::DrumMachine;
 use crate::commands::AudioCommandReceiver;
+use crate::events::{AudioEvent, AudioEventReceiver, AudioEventSender};
 use cpal::{traits::*, Sample};
 use tauri::{AppHandle, Emitter};
 
@@ -10,6 +11,8 @@ pub struct AudioOutput {
 impl AudioOutput {
     pub fn new(
         command_receiver: AudioCommandReceiver,
+        event_sender: AudioEventSender,
+        event_receiver: AudioEventReceiver,
         app_handle: AppHandle,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
@@ -22,8 +25,8 @@ impl AudioOutput {
 
         println!("Audio device sample rate: {}", sample_rate);
 
-        // Create drum machine with the actual device sample rate
-        let drum_machine = DrumMachine::new(sample_rate);
+        // Create drum machine with the actual device sample rate and event sender
+        let drum_machine = DrumMachine::new(sample_rate, event_sender);
 
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => Self::run::<f32>(
@@ -31,6 +34,7 @@ impl AudioOutput {
                 &config.into(),
                 drum_machine,
                 command_receiver,
+                event_receiver,
                 app_handle,
             )?,
             cpal::SampleFormat::I16 => Self::run::<i16>(
@@ -38,6 +42,7 @@ impl AudioOutput {
                 &config.into(),
                 drum_machine,
                 command_receiver,
+                event_receiver,
                 app_handle,
             )?,
             cpal::SampleFormat::U16 => Self::run::<u16>(
@@ -45,6 +50,7 @@ impl AudioOutput {
                 &config.into(),
                 drum_machine,
                 command_receiver,
+                event_receiver,
                 app_handle,
             )?,
             _ => return Err("Unsupported sample format".into()),
@@ -60,6 +66,7 @@ impl AudioOutput {
         config: &cpal::StreamConfig,
         drum_machine: DrumMachine,
         command_receiver: AudioCommandReceiver,
+        event_receiver: AudioEventReceiver,
         app_handle: AppHandle,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
@@ -71,29 +78,32 @@ impl AudioOutput {
             config,
             {
                 let mut drum_machine = drum_machine;
-                let mut previous_step: Option<u8> = None;
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     // Process pending commands at the start of the buffer
                     command_receiver.process_commands(|command| {
                         drum_machine.apply_command(command);
                     });
 
-                    // Check for step changes at the start of the buffer
-                    let current_step = drum_machine.get_current_step();
-                    if previous_step.map_or(true, |prev| prev != current_step) {
-                        previous_step = Some(current_step);
-
-                        // Emit step change event
-                        let _ = app_handle.emit("step_changed", current_step);
-
-                        // Emit modulator values on step change
-                        let delay_time = drum_machine.get_current_delay_time();
-                        let reverb_size = drum_machine.get_current_reverb_size();
-                        let reverb_decay = drum_machine.get_current_reverb_decay();
-
-                        let _ = app_handle
-                            .emit("modulator_values", (delay_time, reverb_size, reverb_decay));
-                    }
+                    // Process all pending events and emit them via Tauri
+                    event_receiver.process_events(|event| {
+                        match event {
+                            AudioEvent::KickStepChanged(step) => {
+                                let _ = app_handle.emit("kick_step_changed", step);
+                            },
+                            AudioEvent::ClapStepChanged(step) => {
+                                let _ = app_handle.emit("clap_step_changed", step);
+                            },
+                            AudioEvent::ModulatorValues(delay, size, decay) => {
+                                let _ = app_handle.emit("modulator_values", (delay, size, decay));
+                            },
+                            AudioEvent::KickPatternGenerated(pattern) => {
+                                let _ = app_handle.emit("kick_pattern_generated", pattern.to_vec());
+                            },
+                            AudioEvent::ClapPatternGenerated(pattern) => {
+                                let _ = app_handle.emit("clap_pattern_generated", pattern.to_vec());
+                            },
+                        }
+                    });
 
                     // Process all frames
                     for frame in data.chunks_mut(channels) {

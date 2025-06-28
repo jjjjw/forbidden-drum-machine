@@ -1,14 +1,22 @@
 mod audio;
 mod audio_output;
 mod commands;
+mod events;
+mod sequencing;
 
 use once_cell::sync::Lazy;
 use audio_output::AudioOutput;
 use commands::{AudioCommand, AudioCommandQueue};
+use events::AudioEventQueue;
 
 // Global command queue for UI -> Audio communication
 static COMMAND_QUEUE: Lazy<AudioCommandQueue> = Lazy::new(|| {
     AudioCommandQueue::new()
+});
+
+// Global event queue for Audio -> UI communication
+static EVENT_QUEUE: Lazy<AudioEventQueue> = Lazy::new(|| {
+    AudioEventQueue::new()
 });
 
 // Audio output handle
@@ -30,7 +38,9 @@ fn start_audio(app_handle: tauri::AppHandle) -> Result<String, String> {
         }
         
         let command_receiver = COMMAND_QUEUE.receiver();
-        match AudioOutput::new(command_receiver, app_handle) {
+        let event_sender = EVENT_QUEUE.sender();
+        let event_receiver = EVENT_QUEUE.receiver();
+        match AudioOutput::new(command_receiver, event_sender, event_receiver, app_handle) {
             Ok(output) => {
                 AUDIO_OUTPUT = Some(output);
                 Ok("Audio started successfully".to_string())
@@ -75,19 +85,6 @@ fn set_kick_pattern(pattern: Vec<bool>) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn set_snare_pattern(pattern: Vec<bool>) -> Result<(), String> {
-    if pattern.len() != 16 {
-        return Err("Pattern must be exactly 16 steps".to_string());
-    }
-    
-    let mut array_pattern = [false; 16];
-    array_pattern.copy_from_slice(&pattern);
-    
-    let sender = COMMAND_QUEUE.sender();
-    sender.send(AudioCommand::SetSnarePattern(array_pattern));
-    Ok(())
-}
 
 #[tauri::command]
 fn set_clap_pattern(pattern: Vec<bool>) -> Result<(), String> {
@@ -140,18 +137,40 @@ fn set_kick_release(release: f32) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_snare_attack(attack: f32) -> Result<(), String> {
+fn set_clap_density(density: f32) -> Result<(), String> {
     let sender = COMMAND_QUEUE.sender();
-    sender.send(AudioCommand::SetSnareAmpAttack(attack));
+    sender.send(AudioCommand::SetClapDensity(density));
     Ok(())
 }
 
 #[tauri::command]
-fn set_snare_release(release: f32) -> Result<(), String> {
+fn set_kick_clock_bias(bias: f32) -> Result<(), String> {
     let sender = COMMAND_QUEUE.sender();
-    sender.send(AudioCommand::SetSnareAmpRelease(release));
+    sender.send(AudioCommand::SetKickClockBias(bias));
     Ok(())
 }
+
+#[tauri::command]
+fn set_clap_clock_bias(bias: f32) -> Result<(), String> {
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::SetClapClockBias(bias));
+    Ok(())
+}
+
+#[tauri::command]
+fn generate_kick_pattern() -> Result<(), String> {
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::GenerateKickPattern);
+    Ok(())
+}
+
+#[tauri::command]
+fn generate_clap_pattern() -> Result<(), String> {
+    let sender = COMMAND_QUEUE.sender();
+    sender.send(AudioCommand::GenerateClapPattern);
+    Ok(())
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -163,15 +182,17 @@ pub fn run() {
             stop_audio,
             set_bpm, 
             set_kick_pattern, 
-            set_snare_pattern,
             set_clap_pattern,
             set_delay_send,
             set_reverb_send,
             set_delay_freeze,
             set_kick_attack,
             set_kick_release,
-            set_snare_attack,
-            set_snare_release
+            set_clap_density,
+            set_kick_clock_bias,
+            set_clap_clock_bias,
+            generate_kick_pattern,
+            generate_clap_pattern
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
