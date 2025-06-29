@@ -6,6 +6,7 @@ import "./App.css";
 
 function App() {
   const [audioStarted, setAudioStarted] = useState(false);
+  const [audioPaused, setAudioPaused] = useState(false);
   const [bpm, setBpm] = useState(120);
   const [kickPattern, setKickPattern] = useState([
     true,
@@ -61,8 +62,12 @@ function App() {
 
   // Markov and clock bias controls
   const [markovDensity, setMarkovDensity] = useState(0.3);
-  const [kickClockBias, setKickClockBias] = useState(0.5);
-  const [clapClockBias, setClapClockBias] = useState(0.5);
+  const [kickLoopBias, setKickLoopBias] = useState(0.5);
+  const [clapLoopBias, setClapLoopBias] = useState(0.5);
+
+  // Volume controls
+  const [kickVolume, setKickVolume] = useState(0.8);
+  const [clapVolume, setClapVolume] = useState(0.6);
 
   // Listen for events from audio thread
   useEffect(() => {
@@ -75,14 +80,20 @@ function App() {
     const setupListeners = async () => {
       try {
         // Listen for kick step changes
-        kickStepUnlisten = await listen<number>("kick_step_changed", (event) => {
-          setCurrentKickStep(event.payload);
-        });
+        kickStepUnlisten = await listen<number>(
+          "kick_step_changed",
+          (event) => {
+            setCurrentKickStep(event.payload);
+          },
+        );
 
         // Listen for clap step changes
-        clapStepUnlisten = await listen<number>("clap_step_changed", (event) => {
-          setCurrentClapStep(event.payload);
-        });
+        clapStepUnlisten = await listen<number>(
+          "clap_step_changed",
+          (event) => {
+            setCurrentClapStep(event.payload);
+          },
+        );
 
         // Listen for modulator value updates
         modulatorUnlisten = await listen<[number, number, number]>(
@@ -94,14 +105,20 @@ function App() {
         );
 
         // Listen for generated kick patterns
-        kickPatternUnlisten = await listen<boolean[]>("kick_pattern_generated", (event) => {
-          setKickPattern(event.payload);
-        });
+        kickPatternUnlisten = await listen<boolean[]>(
+          "kick_pattern_generated",
+          (event) => {
+            setKickPattern(event.payload);
+          },
+        );
 
         // Listen for generated clap patterns
-        clapPatternUnlisten = await listen<boolean[]>("clap_pattern_generated", (event) => {
-          setClapPattern(event.payload);
-        });
+        clapPatternUnlisten = await listen<boolean[]>(
+          "clap_pattern_generated",
+          (event) => {
+            setClapPattern(event.payload);
+          },
+        );
       } catch (error) {
         console.error("Error setting up event listeners:", error);
       }
@@ -133,7 +150,17 @@ function App() {
   async function stopAudio() {
     try {
       const result = await invoke("stop_audio");
-      setAudioStarted(false);
+      setAudioPaused(true);
+      setStatus(result as string);
+    } catch (error) {
+      setStatus(`Error: ${error}`);
+    }
+  }
+
+  async function resumeAudio() {
+    try {
+      const result = await invoke("resume_audio");
+      setAudioPaused(false);
       setStatus(result as string);
     } catch (error) {
       setStatus(`Error: ${error}`);
@@ -210,7 +237,6 @@ function App() {
     }
   }
 
-
   async function updateClapPattern(newPattern: boolean[]) {
     setClapPattern(newPattern);
     try {
@@ -251,21 +277,39 @@ function App() {
     }
   }
 
-  async function updateKickClockBias(value: number) {
-    setKickClockBias(value);
+  async function updateKickLoopBias(value: number) {
+    setKickLoopBias(value);
     try {
-      await invoke("set_kick_clock_bias", { bias: value });
+      await invoke("set_kick_loop_bias", { bias: value });
     } catch (error) {
-      setStatus(`Error setting kick clock bias: ${error}`);
+      setStatus(`Error setting kick loop bias: ${error}`);
     }
   }
 
-  async function updateClapClockBias(value: number) {
-    setClapClockBias(value);
+  async function updateClapLoopBias(value: number) {
+    setClapLoopBias(value);
     try {
-      await invoke("set_clap_clock_bias", { bias: value });
+      await invoke("set_clap_loop_bias", { bias: value });
     } catch (error) {
-      setStatus(`Error setting clap clock bias: ${error}`);
+      setStatus(`Error setting clap loop bias: ${error}`);
+    }
+  }
+
+  async function updateKickVolume(value: number) {
+    setKickVolume(value);
+    try {
+      await invoke("set_kick_volume", { volume: value });
+    } catch (error) {
+      setStatus(`Error setting kick volume: ${error}`);
+    }
+  }
+
+  async function updateClapVolume(value: number) {
+    setClapVolume(value);
+    try {
+      await invoke("set_clap_volume", { volume: value });
+    } catch (error) {
+      setStatus(`Error setting clap volume: ${error}`);
     }
   }
 
@@ -289,19 +333,35 @@ function App() {
             >
               ▶ Start Audio
             </button>
-            <button
-              onClick={stopAudio}
-              className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50"
-              disabled={!audioStarted}
-            >
-              ⏹ Stop Audio
-            </button>
+            {audioStarted && !audioPaused && (
+              <button
+                onClick={stopAudio}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105"
+              >
+                ⏸ Pause Audio
+              </button>
+            )}
+            {audioStarted && audioPaused && (
+              <button
+                onClick={resumeAudio}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105"
+              >
+                ▶ Resume Audio
+              </button>
+            )}
           </div>
           <div className="flex justify-between items-center">
-            {audioStarted && (
+            {audioStarted && !audioPaused && (
               <div className="text-green-400 font-semibold flex items-center gap-2">
                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                Audio Running - Kick: {currentKickStep + 1}/16, Clap: {currentClapStep + 1}/16
+                Audio Running - Kick: {currentKickStep + 1}/16, Clap:{" "}
+                {currentClapStep + 1}/16
+              </div>
+            )}
+            {audioStarted && audioPaused && (
+              <div className="text-yellow-400 font-semibold flex items-center gap-2">
+                <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
+                Audio Paused
               </div>
             )}
             {status && <p className="text-gray-300 text-sm">{status}</p>}
@@ -335,7 +395,8 @@ function App() {
               <h2 className="text-2xl font-bold text-red-400">Kick Pattern</h2>
               <button
                 onClick={generateKickPattern}
-                className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105"
+                className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50"
+                disabled={!audioStarted}
               >
                 Generate New
               </button>
@@ -355,7 +416,8 @@ function App() {
               <h2 className="text-2xl font-bold text-cyan-400">Clap Pattern</h2>
               <button
                 onClick={generateClapPattern}
-                className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105"
+                className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50"
+                disabled={!audioStarted}
               >
                 Generate New
               </button>
@@ -372,7 +434,9 @@ function App() {
 
         {/* Markov Generation */}
         <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
-          <h2 className="text-2xl font-bold mb-4 text-purple-400">Pattern Generation</h2>
+          <h2 className="text-2xl font-bold mb-4 text-purple-400">
+            Pattern Generation
+          </h2>
           <div className="flex items-center gap-6">
             <div className="flex-1">
               <label className="block text-sm font-bold mb-2">
@@ -384,7 +448,9 @@ function App() {
                 max="1"
                 step="0.01"
                 value={markovDensity}
-                onChange={(e) => updateMarkovDensity(parseFloat(e.target.value))}
+                onChange={(e) =>
+                  updateMarkovDensity(parseFloat(e.target.value))
+                }
                 className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -396,9 +462,23 @@ function App() {
           {/* Kick Controls */}
           <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
             <h2 className="text-2xl font-bold mb-4 text-red-400">
-              Kick Envelope
+              Kick Controls
             </h2>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold mb-2">
+                  Volume: {(kickVolume * 100).toFixed(0)}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={kickVolume}
+                  onChange={(e) => updateKickVolume(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-bold mb-2">
                   Attack: {(kickAttack * 1000).toFixed(1)}ms
@@ -432,44 +512,67 @@ function App() {
             </div>
           </div>
 
-          {/* Clock Bias Controls */}
+          {/* Clap Controls */}
           <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-            <h2 className="text-2xl font-bold mb-4 text-orange-400">
-              Clock Bias
+            <h2 className="text-2xl font-bold mb-4 text-cyan-400">
+              Clap Controls
             </h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-bold mb-2">
-                  Kick Bias: {kickClockBias.toFixed(2)}
+                  Volume: {(clapVolume * 100).toFixed(0)}%
                 </label>
                 <input
                   type="range"
-                  min="0.03"
-                  max="0.97"
+                  min="0"
+                  max="1"
                   step="0.01"
-                  value={kickClockBias}
-                  onChange={(e) =>
-                    updateKickClockBias(parseFloat(e.target.value))
-                  }
+                  value={clapVolume}
+                  onChange={(e) => updateClapVolume(parseFloat(e.target.value))}
                   className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-bold mb-2">
-                  Clap Bias: {clapClockBias.toFixed(2)}
-                </label>
-                <input
-                  type="range"
-                  min="0.03"
-                  max="0.97"
-                  step="0.01"
-                  value={clapClockBias}
-                  onChange={(e) =>
-                    updateClapClockBias(parseFloat(e.target.value))
-                  }
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Clock Bias Controls */}
+        <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
+          <h2 className="text-2xl font-bold mb-4 text-orange-400">
+            Clock Bias
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-bold mb-2">
+                Kick Bias: {kickLoopBias.toFixed(2)}
+              </label>
+              <input
+                type="range"
+                min="0.03"
+                max="0.97"
+                step="0.01"
+                value={kickLoopBias}
+                onChange={(e) =>
+                  updateKickLoopBias(parseFloat(e.target.value))
+                }
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold mb-2">
+                Clap Bias: {clapLoopBias.toFixed(2)}
+              </label>
+              <input
+                type="range"
+                min="0.03"
+                max="0.97"
+                step="0.01"
+                value={clapLoopBias}
+                onChange={(e) =>
+                  updateClapLoopBias(parseFloat(e.target.value))
+                }
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
             </div>
           </div>
         </div>

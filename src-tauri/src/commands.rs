@@ -16,10 +16,13 @@ pub enum AudioCommand {
     SetReverbSize(f32),
     SetReverbDecay(f32),
     SetClapDensity(f32),
-    SetKickClockBias(f32),
-    SetClapClockBias(f32),
+    SetKickLoopBias(f32),
+    SetClapLoopBias(f32),
     GenerateKickPattern,
     GenerateClapPattern,
+    SetPaused(bool),
+    SetKickVolume(f32),
+    SetClapVolume(f32),
 }
 
 /// Lock-free command queue for audio parameter changes

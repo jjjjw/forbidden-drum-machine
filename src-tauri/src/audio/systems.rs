@@ -5,7 +5,7 @@ use crate::audio::reverbs::FDNReverb;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 use crate::commands::AudioCommand;
 use crate::events::{AudioEvent, AudioEventSender};
-use crate::sequencing::{BiasedClock, MarkovChain};
+use crate::sequencing::{BiasedLoop, Clock, MarkovChain};
 
 // Calculate the number of samples for 4 beats based on BPM and sample rate
 fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
@@ -15,8 +15,9 @@ fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
 pub struct DrumMachine {
     kick: KickDrum,
     clap: ClapDrum,
-    kick_clock: BiasedClock,
-    clap_clock: BiasedClock,
+    clock: Clock,
+    kick_loop: BiasedLoop,
+    clap_loop: BiasedLoop,
     kick_pattern: [bool; 16],
     clap_pattern: [bool; 16],
 
@@ -38,26 +39,35 @@ pub struct DrumMachine {
     delay_send: f32,
     reverb_send: f32,
 
+    // Instrument volumes
+    kick_volume: f32,
+    clap_volume: f32,
+
     // Sample and hold modulators
     delay_time_mod: SampleAndHold,
     reverb_size_mod: SampleAndHold,
     reverb_decay_mod: SampleAndHold,
     sample_rate: f32,
+
+    // Pause state
+    is_paused: bool,
 }
 
 impl DrumMachine {
     pub fn new(sample_rate: f32, event_sender: AudioEventSender) -> Self {
         // Initialize clocks and Markov generator
         let total_samples_in_loop = bpm_to_samples(120.0, sample_rate);
-        let kick_clock = BiasedClock::new(total_samples_in_loop, 16, 0.5); // Neutral bias initially
-        let clap_clock = BiasedClock::new(total_samples_in_loop, 16, 0.5); // Neutral bias initially
+        let clock = Clock::new();
+        let kick_loop = BiasedLoop::new(total_samples_in_loop, 16, 0.5); // Neutral bias initially
+        let clap_loop = BiasedLoop::new(total_samples_in_loop, 16, 0.5); // Neutral bias initially
         let markov_generator = MarkovChain::new(0.3); // 30% density
 
         Self {
             kick: KickDrum::new(sample_rate),
             clap: ClapDrum::new(sample_rate),
-            kick_clock,
-            clap_clock,
+            clock,
+            kick_loop,
+            clap_loop,
             kick_pattern: [
                 true, false, false, false, false, false, true, false, false, false, false, false,
                 false, false, true, false,
@@ -85,19 +95,26 @@ impl DrumMachine {
             delay_send: 0.2,
             reverb_send: 0.3,
 
+            // Default instrument volumes
+            kick_volume: 0.8,
+            clap_volume: 0.6,
+
             sample_rate,
 
             // Initialize modulators with slower rates and configurable slew
             delay_time_mod: SampleAndHold::new(0.125, 0.1, 0.5, 150.0, sample_rate), // 8 sec updates, 150ms slew
             reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0, sample_rate), // 6 sec updates, 200ms slew
             reverb_decay_mod: SampleAndHold::new(0.1, 0.5, 0.95, 100.0, sample_rate), // 10 sec updates, 100ms slew
+
+            // Initialize as not paused
+            is_paused: false,
         }
     }
 
     pub fn set_bpm(&mut self, bpm: f32) {
         let total_samples_in_loop = bpm_to_samples(bpm, self.sample_rate);
-        self.kick_clock.set_total_samples(total_samples_in_loop);
-        self.clap_clock.set_total_samples(total_samples_in_loop);
+        self.kick_loop.set_total_samples(total_samples_in_loop);
+        self.clap_loop.set_total_samples(total_samples_in_loop);
     }
 
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -121,8 +138,14 @@ impl DrumMachine {
     }
 
     pub fn next_sample(&mut self) -> (f32, f32) {
+        // If paused, return silence
+        if self.is_paused {
+            return (0.0, 0.0);
+        }
+
+        self.clock.tick();
         // Handle kick drum with biased clock and step sequencing
-        if let Some(step) = self.kick_clock.tick() {
+        if let Some(step) = self.kick_loop.tick(&self.clock) {
             // Check if this is a new step and emit event
             if self.prev_kick_step.map_or(true, |prev| prev != step) {
                 self.prev_kick_step = Some(step);
@@ -136,7 +159,7 @@ impl DrumMachine {
         }
 
         // Handle clap drum with biased clock and step sequencing
-        if let Some(step) = self.clap_clock.tick() {
+        if let Some(step) = self.clap_loop.tick(&self.clock) {
             // Check if this is a new step and emit event
             if self.prev_clap_step.map_or(true, |prev| prev != step) {
                 self.prev_clap_step = Some(step);
@@ -157,9 +180,9 @@ impl DrumMachine {
         self.reverb.set_size(modulated_reverb_size);
         self.reverb.set_feedback(modulated_reverb_decay);
 
-        // Generate dry drum samples
-        let kick_sample = self.kick.next_sample();
-        let clap_sample = self.clap.next_sample();
+        // Generate dry drum samples with volume scaling
+        let kick_sample = self.kick.next_sample() * self.kick_volume;
+        let clap_sample = self.clap.next_sample() * self.clap_volume;
         let dry_mixed = kick_sample + clap_sample;
 
         // Create sends to effects
@@ -214,10 +237,13 @@ impl DrumMachine {
             AudioCommand::SetReverbSize(size) => self.set_reverb_size(size),
             AudioCommand::SetReverbDecay(decay) => self.set_reverb_decay(decay),
             AudioCommand::SetClapDensity(density) => self.set_markov_density(density),
-            AudioCommand::SetKickClockBias(bias) => self.set_kick_clock_bias(bias),
-            AudioCommand::SetClapClockBias(bias) => self.set_clap_clock_bias(bias),
+            AudioCommand::SetKickLoopBias(bias) => self.set_kick_loop_bias(bias),
+            AudioCommand::SetClapLoopBias(bias) => self.set_clap_loop_bias(bias),
             AudioCommand::GenerateKickPattern => self.generate_kick_pattern(),
             AudioCommand::GenerateClapPattern => self.generate_clap_pattern(),
+            AudioCommand::SetPaused(paused) => self.set_paused(paused),
+            AudioCommand::SetKickVolume(volume) => self.set_kick_volume(volume),
+            AudioCommand::SetClapVolume(volume) => self.set_clap_volume(volume),
         }
     }
 
@@ -273,7 +299,7 @@ impl DrumMachine {
 
     pub fn get_current_step(&self) -> u8 {
         // Use kick clock as the main step reference
-        self.kick_clock.get_current_step()
+        self.kick_loop.get_current_step(&self.clock)
     }
 
     fn emit_modulator_values(&self) {
@@ -329,12 +355,36 @@ impl DrumMachine {
     }
 
     // Clock bias controls
-    pub fn set_kick_clock_bias(&mut self, bias: f32) {
-        self.kick_clock.set_bias(bias);
+    pub fn set_kick_loop_bias(&mut self, bias: f32) {
+        self.kick_loop.set_bias(bias);
     }
 
-    pub fn set_clap_clock_bias(&mut self, bias: f32) {
-        self.clap_clock.set_bias(bias);
+    pub fn set_clap_loop_bias(&mut self, bias: f32) {
+        self.clap_loop.set_bias(bias);
+    }
+
+    pub fn set_paused(&mut self, paused: bool) {
+        self.is_paused = paused;
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.is_paused
+    }
+
+    pub fn set_kick_volume(&mut self, volume: f32) {
+        self.kick_volume = volume.clamp(0.0, 1.0);
+    }
+
+    pub fn set_clap_volume(&mut self, volume: f32) {
+        self.clap_volume = volume.clamp(0.0, 1.0);
+    }
+
+    pub fn get_kick_volume(&self) -> f32 {
+        self.kick_volume
+    }
+
+    pub fn get_clap_volume(&self) -> f32 {
+        self.clap_volume
     }
 }
 

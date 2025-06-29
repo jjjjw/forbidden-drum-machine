@@ -1,5 +1,3 @@
-use crate::audio::envelopes::AREEnvelope;
-use crate::audio::AudioGenerator;
 use fastrand;
 
 /// Simple Markov chain for generating drum events
