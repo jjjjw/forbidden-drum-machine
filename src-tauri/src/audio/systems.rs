@@ -106,8 +106,8 @@ impl DrumMachine {
             reverb_size_mod: SampleAndHold::new(0.165, 0.5, 1.5, 200.0, sample_rate), // 6 sec updates, 200ms slew
             reverb_decay_mod: SampleAndHold::new(0.1, 0.5, 0.95, 100.0, sample_rate), // 10 sec updates, 100ms slew
 
-            // Initialize as not paused
-            is_paused: false,
+            // Initialize as paused
+            is_paused: true,
         }
     }
 
@@ -399,6 +399,7 @@ mod tests {
         let event_queue = crate::events::AudioEventQueue::new();
         let event_sender = event_queue.sender();
         let mut drum_machine = DrumMachine::new(sample_rate, event_sender);
+        drum_machine.set_paused(false);
         drum_machine.set_bpm(120.0);
 
         // Calculate samples for one bar (16 steps at 120 BPM)
