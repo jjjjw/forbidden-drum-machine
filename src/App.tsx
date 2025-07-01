@@ -5,8 +5,8 @@ import { StepGrid } from "./components/StepGrid";
 import "./App.css";
 
 function App() {
-  const [audioStarted, setAudioStarted] = useState(false);
-  const [audioPaused, setAudioPaused] = useState(false);
+  const [audioStarted, setAudioStarted] = useState(true); // Audio is always started now
+  const [audioPaused, setAudioPaused] = useState(true); // Starts paused
   const [bpm, setBpm] = useState(120);
   const [kickPattern, setKickPattern] = useState([
     true,
@@ -124,9 +124,8 @@ function App() {
       }
     };
 
-    if (audioStarted) {
-      setupListeners();
-    }
+    // Setup listeners immediately since audio is always running
+    setupListeners();
 
     return () => {
       if (kickStepUnlisten) kickStepUnlisten();
@@ -135,17 +134,8 @@ function App() {
       if (kickPatternUnlisten) kickPatternUnlisten();
       if (clapPatternUnlisten) clapPatternUnlisten();
     };
-  }, [audioStarted]);
+  }, []);
 
-  async function startAudio() {
-    try {
-      const result = await invoke("start_audio");
-      setAudioStarted(true);
-      setStatus(result as string);
-    } catch (error) {
-      setStatus(`Error: ${error}`);
-    }
-  }
 
   async function stopAudio() {
     try {
@@ -323,45 +313,38 @@ function App() {
         {/* Audio Control & Status */}
         <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
           <h2 className="text-2xl font-bold mb-4 text-green-400">
-            Audio Control
+            Playback Control
           </h2>
           <div className="flex gap-4 mb-4">
-            <button
-              onClick={startAudio}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50"
-              disabled={audioStarted}
-            >
-              ▶ Start Audio
-            </button>
-            {audioStarted && !audioPaused && (
+            {!audioPaused && (
               <button
                 onClick={stopAudio}
                 className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105"
               >
-                ⏸ Pause Audio
+                ⏸ Pause
               </button>
             )}
-            {audioStarted && audioPaused && (
+            {audioPaused && (
               <button
                 onClick={resumeAudio}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105"
               >
-                ▶ Resume Audio
+                ▶ Play
               </button>
             )}
           </div>
           <div className="flex justify-between items-center">
-            {audioStarted && !audioPaused && (
+            {!audioPaused && (
               <div className="text-green-400 font-semibold flex items-center gap-2">
                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                Audio Running - Kick: {currentKickStep + 1}/16, Clap:{" "}
+                Playing - Kick: {currentKickStep + 1}/16, Clap:{" "}
                 {currentClapStep + 1}/16
               </div>
             )}
-            {audioStarted && audioPaused && (
+            {audioPaused && (
               <div className="text-yellow-400 font-semibold flex items-center gap-2">
                 <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                Audio Paused
+                Paused
               </div>
             )}
             {status && <p className="text-gray-300 text-sm">{status}</p>}
@@ -395,8 +378,7 @@ function App() {
               <h2 className="text-2xl font-bold text-red-400">Kick Pattern</h2>
               <button
                 onClick={generateKickPattern}
-                className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50"
-                disabled={!audioStarted}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105"
               >
                 Generate New
               </button>
@@ -416,8 +398,7 @@ function App() {
               <h2 className="text-2xl font-bold text-cyan-400">Clap Pattern</h2>
               <button
                 onClick={generateClapPattern}
-                className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50"
-                disabled={!audioStarted}
+                className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105"
               >
                 Generate New
               </button>

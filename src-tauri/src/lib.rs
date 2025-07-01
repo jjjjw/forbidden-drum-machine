@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
 use std::process::ExitCode;
 use std::time::Duration;
+use sysinfo::{System, Pid};
 
 // App state containing only thread-safe communication channels
 struct AppAudioState {
@@ -46,6 +47,35 @@ fn start_event_emitter(event_receiver: crate::events::AudioEventReceiver, app_ha
             
             // Small sleep to avoid busy waiting
             std::thread::sleep(Duration::from_millis(16)); // ~60 FPS
+        }
+    });
+}
+
+/// Starts CPU usage monitoring that reports every 10 seconds
+fn start_cpu_monitor(app_handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let mut system = System::new();
+        let current_pid = Pid::from_u32(std::process::id());
+        
+        loop {
+            // Refresh process information
+            system.refresh_processes();
+            
+            if let Some(process) = system.process(current_pid) {
+                let cpu_usage = process.cpu_usage();
+                let memory_usage = process.memory() / 1024 / 1024; // Convert to MB
+                
+                println!("CPU Usage: {:.1}%, Memory: {} MB", cpu_usage, memory_usage);
+                
+                // Emit to frontend
+                let _ = app_handle.emit("cpu_usage", serde_json::json!({
+                    "cpu_percent": cpu_usage,
+                    "memory_mb": memory_usage
+                }));
+            }
+            
+            // Sleep for 10 seconds
+            std::thread::sleep(Duration::from_secs(10));
         }
     });
 }
@@ -256,7 +286,10 @@ pub fn run() -> ExitCode {
             let app_handle = app.handle().clone();
             
             // Start event emitter background process
-            start_event_emitter(event_receiver, app_handle);
+            start_event_emitter(event_receiver, app_handle.clone());
+            
+            // Start CPU monitoring
+            start_cpu_monitor(app_handle);
 
             // Manage only the communication channels
             app.manage(Mutex::new(AppAudioState {

@@ -22,7 +22,7 @@ export function StepGrid({
           <button
             key={`${label}-${index}`}
             className={`
-              aspect-square rounded-lg border-2 font-bold text-sm transition-all hover:scale-110 relative
+              aspect-square rounded-lg border-2 font-bold text-sm hover:scale-110 relative
               ${
                 active
                   ? "bg-black border-gray-400 text-white shadow-lg"
@@ -41,7 +41,7 @@ export function StepGrid({
           <button
             key={`${label}-${index + 4}`}
             className={`
-              aspect-square rounded-lg border-2 font-bold text-sm transition-all hover:scale-110 relative
+              aspect-square rounded-lg border-2 font-bold text-sm hover:scale-110 relative
               ${
                 active
                   ? "bg-black border-gray-400 text-white shadow-lg"
@@ -60,7 +60,7 @@ export function StepGrid({
           <button
             key={`${label}-${index + 8}`}
             className={`
-              aspect-square rounded-lg border-2 font-bold text-sm transition-all hover:scale-110 relative
+              aspect-square rounded-lg border-2 font-bold text-sm hover:scale-110 relative
               ${
                 active
                   ? "bg-black border-gray-400 text-white shadow-lg"
@@ -79,7 +79,7 @@ export function StepGrid({
           <button
             key={`${label}-${index + 12}`}
             className={`
-              aspect-square rounded-lg border-2 font-bold text-sm transition-all hover:scale-110 relative
+              aspect-square rounded-lg border-2 font-bold text-sm hover:scale-110 relative
               ${
                 active
                   ? "bg-black border-gray-400 text-white shadow-lg"
