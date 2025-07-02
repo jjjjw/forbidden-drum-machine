@@ -1,16 +1,21 @@
-// Integer delay buffer
 pub struct DelayBuffer {
     buffer: Vec<f32>,
     delay_samples: usize,
     write_pos: usize,
+    mask: usize, // For fast modulo with power-of-2 sizes
 }
 
 impl DelayBuffer {
     pub fn new(max_samples: usize) -> Self {
+        // Round up to next power of 2 for efficient modulo operations
+        let size = max_samples.next_power_of_two();
+        let mask = size - 1;
+
         Self {
-            buffer: vec![0.0; max_samples],
+            buffer: vec![0.0; size],
             write_pos: 0,
             delay_samples: 0,
+            mask,
         }
     }
 
@@ -19,32 +24,51 @@ impl DelayBuffer {
     }
 
     pub fn set_delay_samples(&mut self, samples: usize) {
-        self.delay_samples = samples.max(0).min(self.buffer.len() - 1);
+        self.delay_samples = samples.min(self.buffer.len() - 1);
     }
 
     pub fn read_at(&self, delay_samples: usize) -> f32 {
-        let delay_samples = delay_samples.max(0).min(self.buffer.len() - 1);
+        let delay_samples = delay_samples.min(self.buffer.len() - 1);
         let read_pos = if delay_samples <= self.write_pos {
             self.write_pos - delay_samples
         } else {
             self.buffer.len() - (delay_samples - self.write_pos)
         };
-        self.buffer[read_pos]
+
+        // Safe to use unchecked here since we've calculated a valid index
+        unsafe { *self.buffer.get_unchecked(read_pos) }
     }
 
     pub fn read(&self) -> f32 {
         self.read_at(self.delay_samples)
     }
 
+    /// Optimized single sample write
     pub fn write(&mut self, value: f32) {
-        self.buffer[self.write_pos] = value;
-        self.write_pos = (self.write_pos + 1) % self.buffer.len();
+        unsafe {
+            *self.buffer.get_unchecked_mut(self.write_pos) = value;
+        }
+        self.write_pos = (self.write_pos + 1) & self.mask;
+    }
+
+    /// Process a sample through the delay (write + read in one operation)
+    pub fn process(&mut self, input: f32) -> f32 {
+        let output = self.read();
+        self.write(input);
+        output
+    }
+
+    /// Clear the buffer (useful for resetting state)
+    pub fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.write_pos = 0;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_delay_buffer_basic_operation() {
         let mut buffer = DelayBuffer::new(100);
