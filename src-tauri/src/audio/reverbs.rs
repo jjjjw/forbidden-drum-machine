@@ -466,3 +466,97 @@ mod tests {
         }
     }
 }
+
+// Downsampled reverb wrapper for CPU optimization (2:1 downsampling)
+pub struct DownsampledReverb {
+    reverb: FDNReverb,
+
+    // Anti-aliasing filters (2 stages for 10kHz cutoff)
+    aa_filter_left_1: OnePoleFilter,
+    aa_filter_left_2: OnePoleFilter,
+    aa_filter_right_1: OnePoleFilter,
+    aa_filter_right_2: OnePoleFilter,
+
+    // Sample counter for 2:1 downsampling
+    sample_counter: bool,
+
+    // Output hold for upsampling
+    output_hold_left: f32,
+    output_hold_right: f32,
+}
+
+impl DownsampledReverb {
+    pub fn new(original_sample_rate: f32) -> Self {
+        let target_sample_rate = original_sample_rate / 2.0; // 22kHz
+        let reverb = FDNReverb::new(target_sample_rate);
+
+        // Anti-aliasing filter at 10kHz
+        let filter_freq = 10000.0;
+
+        Self {
+            reverb,
+            aa_filter_left_1: OnePoleFilter::new(
+                filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            aa_filter_left_2: OnePoleFilter::new(
+                filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            aa_filter_right_1: OnePoleFilter::new(
+                filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            aa_filter_right_2: OnePoleFilter::new(
+                filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            sample_counter: false,
+            output_hold_left: 0.0,
+            output_hold_right: 0.0,
+        }
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.reverb.set_feedback(feedback);
+    }
+
+    pub fn set_size(&mut self, size: f32) {
+        self.reverb.set_size(size);
+    }
+}
+
+impl StereoAudioProcessor for DownsampledReverb {
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Apply 2-stage anti-aliasing filter
+        let filtered_left = self
+            .aa_filter_left_2
+            .process(self.aa_filter_left_1.process(left));
+        let filtered_right = self
+            .aa_filter_right_2
+            .process(self.aa_filter_right_1.process(right));
+
+        // Process reverb only on every other sample (2:1 downsampling)
+        if self.sample_counter {
+            let (reverb_left, reverb_right) =
+                self.reverb.process_stereo(filtered_left, filtered_right);
+            self.output_hold_left = reverb_left;
+            self.output_hold_right = reverb_right;
+        }
+
+        // Toggle sample counter
+        self.sample_counter = !self.sample_counter;
+
+        // Return held output (zero-order hold upsampling)
+        (self.output_hold_left, self.output_hold_right)
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        // Destroy and recreate everything with new sample rate
+        *self = Self::new(sample_rate);
+    }
+}

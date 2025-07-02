@@ -1,7 +1,7 @@
 use crate::audio::delays::FilteredDelayLine;
 use crate::audio::instruments::{ClapDrum, KickDrum};
 use crate::audio::modulators::SampleAndHold;
-use crate::audio::reverbs::FDNReverb;
+use crate::audio::reverbs::DownsampledReverb;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 use crate::commands::AudioCommand;
 use crate::events::{AudioEvent, AudioEventSender};
@@ -11,6 +11,7 @@ use crate::sequencing::{BiasedLoop, Clock, MarkovChain};
 fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
     (60.0 / bpm * sample_rate) as u32 * 4
 }
+
 
 pub struct DrumMachine {
     kick: KickDrum,
@@ -33,7 +34,7 @@ pub struct DrumMachine {
 
     // Effects chain
     delay: FilteredDelayLine,
-    reverb: FDNReverb,
+    reverb: DownsampledReverb,
 
     // Effects sends
     delay_send: f32,
@@ -89,7 +90,7 @@ impl DrumMachine {
 
             // Initialize effects
             delay: FilteredDelayLine::new(0.5, sample_rate), // 0.5 seconds max delay
-            reverb: FDNReverb::new(sample_rate),
+            reverb: DownsampledReverb::new(sample_rate),
 
             // Default send levels
             delay_send: 0.2,

@@ -7,46 +7,46 @@ mod sequencing;
 use audio_output::AudioOutput;
 use commands::{AudioCommand, AudioCommandQueue};
 use events::{AudioEvent, AudioEventQueue};
-use std::sync::Mutex;
-use tauri::{Emitter, Manager, State};
 use std::process::ExitCode;
+use std::sync::Mutex;
 use std::time::Duration;
-use sysinfo::{System, Pid};
+use sysinfo::{Pid, System};
+use tauri::{Emitter, Manager, State};
 
 // App state containing only thread-safe communication channels
 struct AppAudioState {
     command_queue: AudioCommandQueue,
-    event_queue: AudioEventQueue,
 }
 
 type AppState = Mutex<AppAudioState>;
 
 /// Starts the event emitter background process that forwards audio events to the frontend
-fn start_event_emitter(event_receiver: crate::events::AudioEventReceiver, app_handle: tauri::AppHandle) {
+fn start_event_emitter(
+    event_receiver: crate::events::AudioEventReceiver,
+    app_handle: tauri::AppHandle,
+) {
     std::thread::spawn(move || {
         loop {
-            event_receiver.process_events(|event| {
-                match event {
-                    AudioEvent::KickStepChanged(step) => {
-                        let _ = app_handle.emit("kick_step_changed", step);
-                    },
-                    AudioEvent::ClapStepChanged(step) => {
-                        let _ = app_handle.emit("clap_step_changed", step);
-                    },
-                    AudioEvent::ModulatorValues(delay, size, decay) => {
-                        let _ = app_handle.emit("modulator_values", (delay, size, decay));
-                    },
-                    AudioEvent::KickPatternGenerated(pattern) => {
-                        let _ = app_handle.emit("kick_pattern_generated", pattern.to_vec());
-                    },
-                    AudioEvent::ClapPatternGenerated(pattern) => {
-                        let _ = app_handle.emit("clap_pattern_generated", pattern.to_vec());
-                    },
+            event_receiver.process_events(|event| match event {
+                AudioEvent::KickStepChanged(step) => {
+                    let _ = app_handle.emit("kick_step_changed", step);
+                }
+                AudioEvent::ClapStepChanged(step) => {
+                    let _ = app_handle.emit("clap_step_changed", step);
+                }
+                AudioEvent::ModulatorValues(delay, size, decay) => {
+                    let _ = app_handle.emit("modulator_values", (delay, size, decay));
+                }
+                AudioEvent::KickPatternGenerated(pattern) => {
+                    let _ = app_handle.emit("kick_pattern_generated", pattern.to_vec());
+                }
+                AudioEvent::ClapPatternGenerated(pattern) => {
+                    let _ = app_handle.emit("clap_pattern_generated", pattern.to_vec());
                 }
             });
-            
+
             // Small sleep to avoid busy waiting
-            std::thread::sleep(Duration::from_millis(16)); // ~60 FPS
+            std::thread::sleep(Duration::from_millis(100)); // ~10 FPS
         }
     });
 }
@@ -56,24 +56,27 @@ fn start_cpu_monitor(app_handle: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut system = System::new();
         let current_pid = Pid::from_u32(std::process::id());
-        
+
         loop {
             // Refresh process information
             system.refresh_processes();
-            
+
             if let Some(process) = system.process(current_pid) {
                 let cpu_usage = process.cpu_usage();
                 let memory_usage = process.memory() / 1024 / 1024; // Convert to MB
-                
+
                 println!("CPU Usage: {:.1}%, Memory: {} MB", cpu_usage, memory_usage);
-                
+
                 // Emit to frontend
-                let _ = app_handle.emit("cpu_usage", serde_json::json!({
-                    "cpu_percent": cpu_usage,
-                    "memory_mb": memory_usage
-                }));
+                let _ = app_handle.emit(
+                    "cpu_usage",
+                    serde_json::json!({
+                        "cpu_percent": cpu_usage,
+                        "memory_mb": memory_usage
+                    }),
+                );
             }
-            
+
             // Sleep for 10 seconds
             std::thread::sleep(Duration::from_secs(10));
         }
@@ -241,7 +244,7 @@ pub fn run() -> ExitCode {
     // Initialize audio system in run() scope
     let command_queue = AudioCommandQueue::new();
     let event_queue = AudioEventQueue::new();
-    
+
     let command_receiver = command_queue.receiver();
     let event_sender = event_queue.sender();
     let event_receiver = event_queue.receiver();
@@ -258,7 +261,6 @@ pub fn run() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -284,26 +286,23 @@ pub fn run() -> ExitCode {
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            
+
             // Start event emitter background process
             start_event_emitter(event_receiver, app_handle.clone());
-            
+
             // Start CPU monitoring
             start_cpu_monitor(app_handle);
 
             // Manage only the communication channels
-            app.manage(Mutex::new(AppAudioState {
-                command_queue,
-                event_queue,
-            }));
-            
+            app.manage(Mutex::new(AppAudioState { command_queue }));
+
             Ok(())
         })
         .run(tauri::generate_context!());
 
     // When we get here, the Tauri app has shut down
     // AudioOutput (_audio_output) will be dropped and cleaned up properly
-    
+
     match result {
         Ok(_) => {
             println!("Application exited normally");
