@@ -23,17 +23,28 @@ impl DelayBuffer {
         self.buffer.len()
     }
 
-    pub fn set_delay_samples(&mut self, samples: usize) {
-        self.delay_samples = samples.min(self.buffer.len() - 1);
+    pub fn set_delay_samples(&mut self, delay_samples: usize) {
+        assert!(
+            delay_samples <= self.buffer.len(),
+            "Delay samples must be less than or equal to buffer size"
+        );
+        self.delay_samples = delay_samples;
     }
 
-    pub fn read_at(&self, delay_samples: usize) -> f32 {
-        let delay_samples = delay_samples.min(self.buffer.len() - 1);
-        let read_pos = if delay_samples <= self.write_pos {
+    fn get_read_pos(&self, delay_samples: usize) -> usize {
+        if delay_samples <= self.write_pos {
             self.write_pos - delay_samples
         } else {
             self.buffer.len() - (delay_samples - self.write_pos)
-        };
+        }
+    }
+
+    pub fn read_at(&self, delay_samples: usize) -> f32 {
+        assert!(
+            delay_samples <= self.buffer.len(),
+            "Delay samples must be less than or equal to buffer size"
+        );
+        let read_pos = self.get_read_pos(delay_samples);
 
         // Safe to use unchecked here since we've calculated a valid index
         unsafe { *self.buffer.get_unchecked(read_pos) }
@@ -43,12 +54,16 @@ impl DelayBuffer {
         self.read_at(self.delay_samples)
     }
 
+    pub fn advance(&mut self) {
+        self.write_pos = (self.write_pos + 1) & self.mask;
+    }
+
     /// Optimized single sample write
     pub fn write(&mut self, value: f32) {
         unsafe {
             *self.buffer.get_unchecked_mut(self.write_pos) = value;
         }
-        self.write_pos = (self.write_pos + 1) & self.mask;
+        self.advance();
     }
 
     /// Process a sample through the delay (write + read in one operation)

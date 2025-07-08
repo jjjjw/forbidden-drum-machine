@@ -12,7 +12,6 @@ fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
     (60.0 / bpm * sample_rate) as u32 * 4
 }
 
-
 pub struct DrumMachine {
     kick: KickDrum,
     clap: ClapDrum,

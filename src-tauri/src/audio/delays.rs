@@ -45,6 +45,10 @@ impl DelayLine {
     pub fn write(&mut self, input: f32, feedback: f32) {
         self.buffer.write(input + feedback * self.feedback);
     }
+
+    pub fn advance(&mut self) {
+        self.buffer.advance();
+    }
 }
 
 impl AudioProcessor for DelayLine {
@@ -119,6 +123,8 @@ impl AudioProcessor for FilteredDelayLine {
 
         if !self.delay_line.frozen {
             self.delay_line.write(input, filtered);
+        } else {
+            self.delay_line.advance();
         }
 
         filtered

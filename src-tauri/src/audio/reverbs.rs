@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::audio::delays::DelayLine;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
@@ -56,7 +58,7 @@ pub struct DiffusionStage {
 impl DiffusionStage {
     pub fn new(min_delay_seconds: f32, max_delay_seconds: f32, sample_rate: f32) -> Self {
         let mut flip_polarity = [false; 8];
-        let mut delay_lines = Vec::new();
+        let mut delay_lines = VecDeque::new();
 
         // Calculate segment size
         let total_range = max_delay_seconds - min_delay_seconds;
@@ -76,20 +78,20 @@ impl DiffusionStage {
 
             let mut delay_line = DelayLine::new(delay_seconds, sample_rate);
             delay_line.set_delay_seconds(delay_seconds);
-            delay_lines.push(delay_line);
+            delay_lines.push_back(delay_line);
             flip_polarity[c] = fastrand::bool();
         }
 
         Self {
             delay_lines: [
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
             ],
             flip_polarity,
         }
@@ -127,14 +129,14 @@ pub struct FeedbackStage {
 
 impl FeedbackStage {
     pub fn new(min_delay_seconds: f32, max_delay_seconds: f32, sample_rate: f32) -> Self {
-        let mut delay_lines = Vec::new();
+        let mut delay_lines = VecDeque::new();
         let mut base_delays = [0f32; 8];
 
         // Create 8 delay lines with exponential distribution between min and max
         for c in 0..8 {
             let r = (c as f32) / 7.0; // 0 to 1 over 8 channels (0/7 to 7/7)
             let delay_seconds = min_delay_seconds * (max_delay_seconds / min_delay_seconds).powf(r);
-            delay_lines.push(DelayLine::new(delay_seconds * 2.5, sample_rate));
+            delay_lines.push_back(DelayLine::new(delay_seconds * 2.5, sample_rate));
             base_delays[c] = delay_seconds; // Store in seconds
         }
 
@@ -149,14 +151,14 @@ impl FeedbackStage {
         Self {
             base_delays,
             delay_lines: [
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
-                delay_lines.pop().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
             ],
             lfos,
             feedback: 0.5,

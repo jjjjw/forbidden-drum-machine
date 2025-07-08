@@ -1,7 +1,8 @@
 use crate::audio::{AudioGenerator, TWO_PI};
 use once_cell::sync::Lazy;
 
-const SINE_TABLE_SIZE: usize = 4096;
+const SINE_TABLE_SIZE: usize = 8192;
+const SINE_TABLE_MASK: usize = SINE_TABLE_SIZE - 1;
 
 static SINE_TABLE: Lazy<Vec<f32>> = Lazy::new(|| {
     (0..SINE_TABLE_SIZE)
@@ -79,7 +80,7 @@ impl SineOscillator {
 impl AudioGenerator for SineOscillator {
     fn next_sample(&mut self) -> f32 {
         let phase = self.phase_gen.next_sample();
-        let table_index = ((phase * SINE_TABLE_SIZE as f32) as usize) % SINE_TABLE_SIZE;
+        let table_index = ((phase * SINE_TABLE_SIZE as f32) as usize) & SINE_TABLE_MASK;
         let sample = SINE_TABLE[table_index];
         sample
     }
