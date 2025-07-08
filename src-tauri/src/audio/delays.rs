@@ -43,7 +43,7 @@ impl DelayLine {
     }
 
     pub fn write(&mut self, input: f32, feedback: f32) {
-        self.buffer.write(input + feedback * self.feedback);
+        self.buffer.queue_write(input + feedback * self.feedback);
     }
 
     pub fn advance(&mut self) {
