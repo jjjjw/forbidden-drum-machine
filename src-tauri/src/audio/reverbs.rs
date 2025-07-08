@@ -222,11 +222,6 @@ impl FeedbackStage {
 }
 
 pub struct FDNReverb {
-    input_highcut_left: OnePoleFilter,
-    input_lowcut_left: OnePoleFilter,
-    input_highcut_right: OnePoleFilter,
-    input_lowcut_right: OnePoleFilter,
-
     // 4 diffusion stages with specified delay times
     diffusion_stages: [DiffusionStage; 4],
 
@@ -248,10 +243,6 @@ impl FDNReverb {
         ];
 
         Self {
-            input_highcut_left: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass, sample_rate),
-            input_lowcut_left: OnePoleFilter::new(200.0, OnePoleMode::Highpass, sample_rate),
-            input_highcut_right: OnePoleFilter::new(10000.0, OnePoleMode::Lowpass, sample_rate),
-            input_lowcut_right: OnePoleFilter::new(200.0, OnePoleMode::Highpass, sample_rate),
             diffusion_stages,
             feedback_stage,
         }
@@ -276,18 +267,10 @@ impl FDNReverb {
 
 impl StereoAudioProcessor for FDNReverb {
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Input filtering and scaling
-        let filtered_left = self
-            .input_highcut_left
-            .process(self.input_lowcut_left.process(left * 0.5));
-        let filtered_right = self
-            .input_highcut_right
-            .process(self.input_lowcut_right.process(right * 0.5));
-
-        // Let reflections be the filtered input. Let the matrixes distribute left and right channels
+        // Scale input and distribute to 8-channel array
         let mut reflections = [0.0f32; 8];
-        reflections[0] = filtered_left;
-        reflections[1] = filtered_right;
+        reflections[0] = left * 0.5;
+        reflections[1] = right * 0.5;
 
         // Process through 4 diffusion stages
         for stage in &mut self.diffusion_stages {
