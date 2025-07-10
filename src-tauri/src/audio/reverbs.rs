@@ -5,6 +5,200 @@ use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, AudioNode};
 
+// Fast Hadamard Transform for 4x4
+fn fast_hadamard_transform_4(signals: &mut [f32; 4]) {
+    // Stage 1: 4 -> 2 blocks
+    let mut temp = [0.0f32; 4];
+    for i in 0..2 {
+        temp[i] = signals[i] + signals[i + 2];
+        temp[i + 2] = signals[i] - signals[i + 2];
+    }
+    *signals = temp;
+
+    // Stage 2: 2 -> 1 blocks
+    for i in 0..2 {
+        let base = i * 2;
+        temp[base] = signals[base] + signals[base + 1];
+        temp[base + 1] = signals[base] - signals[base + 1];
+    }
+    *signals = temp;
+
+    // Normalize by 1/sqrt(4) = 0.5 for energy conservation
+    for signal in signals.iter_mut() {
+        *signal *= 0.5;
+    }
+}
+
+// Householder transform for 4x4 feedback stage mixing
+fn householder_transform_4(signals: &mut [f32; 4]) {
+    let sum: f32 = signals.iter().sum();
+    let reflection_coeff = -2.0 / 4.0;
+    let reflection = sum * reflection_coeff;
+
+    for i in 0..4 {
+        signals[i] += reflection;
+    }
+}
+
+pub struct DiffusionStage4 {
+    delay_lines: [DelayLine; 4],
+    flip_polarity: [bool; 4],
+}
+
+impl DiffusionStage4 {
+    pub fn new(min_delay_seconds: f32, max_delay_seconds: f32, sample_rate: f32) -> Self {
+        let mut flip_polarity = [false; 4];
+        let mut delay_lines = VecDeque::new();
+
+        // Calculate segment size
+        let total_range = max_delay_seconds - min_delay_seconds;
+        let segment_size = total_range / 4.0;
+
+        // Divide range into 4 equal segments, one channel per segment
+        for c in 0..4 {
+            let segment_start = min_delay_seconds + (c as f32 * segment_size);
+            let segment_end = segment_start + segment_size;
+
+            // Convert to microseconds for integer random generation
+            let segment_start_us = (segment_start * 1_000_000.0) as i32;
+            let segment_end_us = (segment_end * 1_000_000.0) as i32;
+
+            let random_delay_us = fastrand::i32(segment_start_us..segment_end_us) as f32;
+            let delay_seconds = random_delay_us / 1_000_000.0; // Convert back to seconds
+
+            let mut delay_line = DelayLine::new(delay_seconds, sample_rate);
+            delay_line.set_delay_seconds(delay_seconds);
+            delay_lines.push_back(delay_line);
+            flip_polarity[c] = fastrand::bool();
+        }
+
+        Self {
+            delay_lines: [
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+            ],
+            flip_polarity,
+        }
+    }
+
+    pub fn process(&mut self, input: [f32; 4]) -> [f32; 4] {
+        // Delay all channels
+        let mut delayed = [0.0f32; 4];
+        for i in 0..4 {
+            delayed[i] = self.delay_lines[i].process(input[i]);
+        }
+
+        // Apply Hadamard transform
+        fast_hadamard_transform_4(&mut delayed);
+
+        // Flip polarities based on random values
+        for i in 0..4 {
+            if self.flip_polarity[i] {
+                delayed[i] = -delayed[i];
+            }
+        }
+
+        delayed
+    }
+}
+
+pub struct FeedbackStage4 {
+    base_delays: [f32; 4],
+    delay_lines: [DelayLine; 4],
+    lfos: [SineOscillator; 2], // Use 2 LFOs for 4 channels
+    feedback: f32,
+    modulation_depth: f32,
+    size: f32,
+}
+
+impl FeedbackStage4 {
+    pub fn new(min_delay_seconds: f32, max_delay_seconds: f32, sample_rate: f32) -> Self {
+        let mut delay_lines = VecDeque::new();
+        let mut base_delays = [0f32; 4];
+
+        // Create 4 delay lines with exponential distribution between min and max
+        for c in 0..4 {
+            let r = (c as f32) / 3.0; // 0 to 1 over 4 channels (0/3 to 3/3)
+            let delay_seconds = min_delay_seconds * (max_delay_seconds / min_delay_seconds).powf(r);
+            delay_lines.push_back(DelayLine::new(delay_seconds * 2.5, sample_rate));
+            base_delays[c] = delay_seconds; // Store in seconds
+        }
+
+        // Create 2 LFOs with different frequencies for 4 channels
+        let lfos = [
+            SineOscillator::new(0.19, sample_rate),
+            SineOscillator::new(0.37, sample_rate),
+        ];
+
+        Self {
+            base_delays,
+            delay_lines: [
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+                delay_lines.pop_front().unwrap(),
+            ],
+            lfos,
+            feedback: 0.5,
+            modulation_depth: 0.0,
+            size: 1.0,
+        }
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(0.0, 1.0);
+        for i in 0..4 {
+            self.delay_lines[i].set_feedback(self.feedback);
+        }
+    }
+
+    pub fn set_modulation_depth(&mut self, depth: f32) {
+        self.modulation_depth = depth.clamp(0.0, 1.0);
+    }
+
+    pub fn set_size(&mut self, size: f32) {
+        self.size = size.clamp(0.1, 2.0);
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        for lfo in &mut self.lfos {
+            lfo.set_sample_rate(sample_rate);
+        }
+    }
+
+    pub fn process(&mut self, diffusion: [f32; 4]) -> [f32; 4] {
+        // Generate LFO values (2 LFOs shared across 4 delays)
+        // Unipolar modulation values
+        let lfo_values = [
+            (self.lfos[0].next_sample() + 1.0) * 0.5,
+            (self.lfos[1].next_sample() + 1.0) * 0.5,
+        ];
+
+        // Read current echoes from delay lines
+        let mut echoes = [0.0f32; 4];
+
+        // Apply LFO modulation to delay times (cycle through the 2 LFOs)
+        for i in 0..4 {
+            let lfo_value = lfo_values[i % 2];
+            let modulated_delay =
+                self.base_delays[i] * self.size * (1.0 + lfo_value * self.modulation_depth * 0.1);
+            echoes[i] = self.delay_lines[i].read_at(modulated_delay);
+        }
+
+        // Apply Householder transform
+        householder_transform_4(&mut echoes);
+
+        // Write diffusion input to delay lines with echoes feedback
+        for i in 0..4 {
+            self.delay_lines[i].write(diffusion[i], echoes[i]);
+        }
+
+        echoes
+    }
+}
+
 // Fast Hadamard Transform for 8x8
 fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
     // Stage 1: 8 -> 4 blocks
@@ -50,12 +244,12 @@ fn householder_transform_8(signals: &mut [f32; 8]) {
     }
 }
 
-pub struct DiffusionStage {
+pub struct DiffusionStage8 {
     delay_lines: [DelayLine; 8],
     flip_polarity: [bool; 8],
 }
 
-impl DiffusionStage {
+impl DiffusionStage8 {
     pub fn new(min_delay_seconds: f32, max_delay_seconds: f32, sample_rate: f32) -> Self {
         let mut flip_polarity = [false; 8];
         let mut delay_lines = VecDeque::new();
@@ -118,7 +312,7 @@ impl DiffusionStage {
     }
 }
 
-pub struct FeedbackStage {
+pub struct FeedbackStage8 {
     base_delays: [f32; 8],
     delay_lines: [DelayLine; 8],
     lfos: [SineOscillator; 4],
@@ -127,7 +321,7 @@ pub struct FeedbackStage {
     size: f32,
 }
 
-impl FeedbackStage {
+impl FeedbackStage8 {
     pub fn new(min_delay_seconds: f32, max_delay_seconds: f32, sample_rate: f32) -> Self {
         let mut delay_lines = VecDeque::new();
         let mut base_delays = [0f32; 8];
@@ -223,10 +417,10 @@ impl FeedbackStage {
 
 pub struct FDNReverb {
     // 4 diffusion stages with specified delay times
-    diffusion_stages: [DiffusionStage; 4],
+    diffusion_stages: [DiffusionStage8; 4],
 
     // Feedback stage for late reverberation
-    feedback_stage: FeedbackStage,
+    feedback_stage: FeedbackStage8,
     
     // Gain for AudioNode implementation
     gain: f32,
@@ -235,14 +429,14 @@ pub struct FDNReverb {
 // Design from https://signalsmith-audio.co.uk/writing/2021/lets-write-a-reverb/
 impl FDNReverb {
     pub fn new(sample_rate: f32) -> Self {
-        let feedback_stage = FeedbackStage::new(0.05, 0.150, sample_rate); // 50-150ms range
+        let feedback_stage = FeedbackStage8::new(0.05, 0.150, sample_rate); // 50-150ms range
 
         // Create 4 diffusion stages with delay times: 10-25ms and 25-50ms
         let diffusion_stages = [
-            DiffusionStage::new(0.01, 0.025, sample_rate),
-            DiffusionStage::new(0.01, 0.025, sample_rate),
-            DiffusionStage::new(0.025, 0.05, sample_rate),
-            DiffusionStage::new(0.025, 0.05, sample_rate),
+            DiffusionStage8::new(0.01, 0.025, sample_rate),
+            DiffusionStage8::new(0.01, 0.025, sample_rate),
+            DiffusionStage8::new(0.025, 0.05, sample_rate),
+            DiffusionStage8::new(0.025, 0.05, sample_rate),
         ];
 
         Self {
@@ -491,6 +685,185 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_fast_hadamard_transform_4_energy_conservation() {
+        // Test that the energy is conserved when applying the 4x4 transform
+        let test_inputs = [
+            [1.0, 2.0, 3.0, 4.0],
+            [0.5; 4],
+            [1.0, 0.0, 1.0, 0.0],
+        ];
+
+        for test_input in test_inputs.iter() {
+            let mut signals = *test_input;
+
+            // Calculate input energy
+            let input_energy: f32 = signals.iter().map(|x| x * x).sum();
+
+            // Apply transform
+            fast_hadamard_transform_4(&mut signals);
+
+            // Calculate output energy
+            let output_energy: f32 = signals.iter().map(|x| x * x).sum();
+
+            assert!(
+                (input_energy - output_energy).abs() < 1e-4,
+                "Energy not conserved: input={}, output={}, diff={}",
+                input_energy,
+                output_energy,
+                (input_energy - output_energy).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn test_fast_hadamard_transform_4_invertability() {
+        let original = [1.0, 2.0, 3.0, 4.0];
+        let mut signals = original;
+
+        // Apply transform twice
+        fast_hadamard_transform_4(&mut signals);
+        fast_hadamard_transform_4(&mut signals);
+
+        for (i, (&result, &orig)) in signals.iter().zip(original.iter()).enumerate() {
+            assert!(
+                (result - orig).abs() < 1e-6,
+                "Invertibility test failed at index {}: expected {}, got {}",
+                i,
+                orig,
+                result
+            );
+        }
+    }
+}
+
+pub struct ReverbLite {
+    // 4 diffusion stages with specified delay times (4x4 instead of 8x8)
+    diffusion_stages: [DiffusionStage4; 4],
+
+    // Feedback stage for late reverberation (4x4 instead of 8x8)
+    feedback_stage: FeedbackStage4,
+    
+    // Gain for AudioNode implementation
+    gain: f32,
+}
+
+// ReverbLite: Efficient FDN reverb using 4x4 matrices instead of 8x8
+// Design follows same pattern as FDNReverb but with half the channels
+impl ReverbLite {
+    pub fn new(sample_rate: f32) -> Self {
+        let feedback_stage = FeedbackStage4::new(0.05, 0.150, sample_rate); // 50-150ms range
+
+        // Create 4 diffusion stages with delay times: 10-25ms and 25-50ms
+        // Same layout as full FDN version
+        let diffusion_stages = [
+            DiffusionStage4::new(0.01, 0.025, sample_rate),
+            DiffusionStage4::new(0.01, 0.025, sample_rate),
+            DiffusionStage4::new(0.025, 0.05, sample_rate),
+            DiffusionStage4::new(0.025, 0.05, sample_rate),
+        ];
+
+        Self {
+            diffusion_stages,
+            feedback_stage,
+            gain: 1.0,
+        }
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback_stage.set_feedback(feedback);
+    }
+
+    pub fn set_size(&mut self, size: f32) {
+        self.feedback_stage.set_size(size);
+    }
+
+    pub fn set_modulation_depth(&mut self, depth: f32) {
+        self.feedback_stage.set_modulation_depth(depth);
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.feedback_stage.set_sample_rate(sample_rate);
+    }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
+
+    // For compatibility with DownsampledReverbLite
+    pub fn set_damping(&mut self, _damping: f32) {
+        // ReverbLite doesn't have individual damping control like the full version
+        // This is here for API compatibility
+    }
+}
+
+impl StereoAudioProcessor for ReverbLite {
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Scale input and distribute to 4-channel array
+        let mut reflections = [0.0f32; 4];
+        reflections[0] = left * 0.5;
+        reflections[1] = right * 0.5;
+
+        // Process through 4 diffusion stages (same as full FDN)
+        for stage in &mut self.diffusion_stages {
+            reflections = stage.process(reflections);
+        }
+
+        // Process through feedback stage
+        let echoes = self.feedback_stage.process(reflections);
+
+        // Mix down to stereo - combine pairs of channels and add reflections
+        let mut out_left = 0.0;
+        let mut out_right = 0.0;
+        for i in 0..2 {
+            out_left += (echoes[i * 2] * 0.7) + (reflections[i * 2] * 0.3);
+            out_right += (echoes[i * 2 + 1] * 0.7) + (reflections[i * 2 + 1] * 0.3);
+        }
+
+        (out_left, out_right)
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.set_sample_rate(sample_rate);
+    }
+}
+
+impl AudioNode for ReverbLite {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+        (left_in + reverb_left, right_in + reverb_right)
+    }
+    
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "set_feedback" => {
+                self.set_feedback(parameter);
+                Ok(())
+            }
+            "set_damping" => {
+                self.set_damping(parameter);
+                Ok(())
+            }
+            "set_size" => {
+                self.set_size(parameter);
+                Ok(())
+            }
+            "set_modulation_depth" => {
+                self.set_modulation_depth(parameter);
+                Ok(())
+            }
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+    
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        StereoAudioProcessor::set_sample_rate(self, sample_rate);
+    }
 }
 
 // Downsampled reverb wrapper for CPU optimization (2:1 downsampling)
@@ -633,6 +1006,173 @@ impl AudioNode for DownsampledReverb {
             }
             "set_size" => {
                 self.set_size(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        StereoAudioProcessor::set_sample_rate(self, sample_rate);
+    }
+}
+
+// Downsampled ReverbLite wrapper for CPU optimization (2:1 downsampling)
+pub struct DownsampledReverbLite {
+    reverb: ReverbLite,
+
+    // Anti-aliasing filters (2 stages for 10kHz cutoff)
+    aa_filter_left_1: OnePoleFilter,
+    aa_filter_left_2: OnePoleFilter,
+    aa_filter_right_1: OnePoleFilter,
+    aa_filter_right_2: OnePoleFilter,
+
+    // High-pass filters (300Hz cutoff)
+    hp_filter_left: OnePoleFilter,
+    hp_filter_right: OnePoleFilter,
+
+    // Sample counter for 2:1 downsampling
+    sample_counter: bool,
+
+    // Output hold for upsampling
+    output_hold_left: f32,
+    output_hold_right: f32,
+    
+    // Gain for AudioNode implementation
+    gain: f32,
+}
+
+impl DownsampledReverbLite {
+    pub fn new(original_sample_rate: f32) -> Self {
+        let target_sample_rate = original_sample_rate / 2.0; // 22kHz
+        let reverb = ReverbLite::new(target_sample_rate);
+
+        // Anti-aliasing filter at 10kHz
+        let aa_filter_freq = 10000.0;
+        // High-pass filter at 300Hz
+        let hp_filter_freq = 300.0;
+
+        Self {
+            reverb,
+            aa_filter_left_1: OnePoleFilter::new(
+                aa_filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            aa_filter_left_2: OnePoleFilter::new(
+                aa_filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            aa_filter_right_1: OnePoleFilter::new(
+                aa_filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            aa_filter_right_2: OnePoleFilter::new(
+                aa_filter_freq,
+                OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            hp_filter_left: OnePoleFilter::new(
+                hp_filter_freq,
+                OnePoleMode::Highpass,
+                original_sample_rate,
+            ),
+            hp_filter_right: OnePoleFilter::new(
+                hp_filter_freq,
+                OnePoleMode::Highpass,
+                original_sample_rate,
+            ),
+            sample_counter: false,
+            output_hold_left: 0.0,
+            output_hold_right: 0.0,
+            gain: 1.0,
+        }
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.reverb.set_feedback(feedback);
+    }
+
+    pub fn set_damping(&mut self, damping: f32) {
+        self.reverb.set_damping(damping);
+    }
+
+    pub fn set_size(&mut self, size: f32) {
+        self.reverb.set_size(size);
+    }
+
+    pub fn set_modulation_depth(&mut self, depth: f32) {
+        self.reverb.set_modulation_depth(depth);
+    }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
+}
+
+impl StereoAudioProcessor for DownsampledReverbLite {
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Apply high-pass filter first (300Hz)
+        let hp_left = self.hp_filter_left.process(left);
+        let hp_right = self.hp_filter_right.process(right);
+        
+        // Apply 2-stage anti-aliasing filter (10kHz lowpass)
+        let filtered_left = self
+            .aa_filter_left_2
+            .process(self.aa_filter_left_1.process(hp_left));
+        let filtered_right = self
+            .aa_filter_right_2
+            .process(self.aa_filter_right_1.process(hp_right));
+
+        // Process reverb only on every other sample (2:1 downsampling)
+        if self.sample_counter {
+            let (reverb_left, reverb_right) =
+                StereoAudioProcessor::process_stereo(&mut self.reverb, filtered_left, filtered_right);
+            self.output_hold_left = reverb_left;
+            self.output_hold_right = reverb_right;
+        }
+
+        // Toggle sample counter
+        self.sample_counter = !self.sample_counter;
+
+        // Return held output (zero-order hold upsampling)
+        (self.output_hold_left, self.output_hold_right)
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        // Destroy and recreate everything with new sample rate
+        *self = Self::new(sample_rate);
+    }
+}
+
+impl AudioNode for DownsampledReverbLite {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+        (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            "set_feedback" => {
+                self.set_feedback(parameter);
+                Ok(())
+            }
+            "set_damping" => {
+                self.set_damping(parameter);
+                Ok(())
+            }
+            "set_size" => {
+                self.set_size(parameter);
+                Ok(())
+            }
+            "set_modulation_depth" => {
+                self.set_modulation_depth(parameter);
                 Ok(())
             }
             _ => Err(format!("Unknown event type: {}", event_type))
