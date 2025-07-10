@@ -83,159 +83,45 @@ fn start_cpu_monitor(app_handle: tauri::AppHandle) {
     });
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
-fn stop_audio(state: State<'_, AppState>) -> Result<String, String> {
+fn send_audio_event(
+    system_name: String,
+    node_name: String,
+    event_name: String,
+    parameter: f32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetPaused(true));
-    Ok("Audio paused".to_string())
-}
-
-#[tauri::command]
-fn resume_audio(state: State<'_, AppState>) -> Result<String, String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetPaused(false));
-    Ok("Audio resumed".to_string())
-}
-
-#[tauri::command]
-fn set_bpm(bpm: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetBpm(bpm));
+    sender.send(AudioCommand::SendNodeEvent {
+        system_name,
+        node_name,
+        event_name,
+        parameter,
+    });
     Ok(())
 }
 
 #[tauri::command]
-fn set_kick_pattern(pattern: Vec<bool>, state: State<'_, AppState>) -> Result<(), String> {
-    if pattern.len() != 16 {
-        return Err("Pattern must be exactly 16 steps".to_string());
-    }
-
-    let mut array_pattern = [false; 16];
-    array_pattern.copy_from_slice(&pattern);
-
+fn switch_audio_system(system_name: String, state: State<'_, AppState>) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetKickPattern(array_pattern));
+    sender.send(AudioCommand::SwitchSystem(system_name));
     Ok(())
 }
 
 #[tauri::command]
-fn set_clap_pattern(pattern: Vec<bool>, state: State<'_, AppState>) -> Result<(), String> {
-    if pattern.len() != 16 {
-        return Err("Pattern must be exactly 16 steps".to_string());
-    }
-
-    let mut array_pattern = [false; 16];
-    array_pattern.copy_from_slice(&pattern);
-
+fn set_sequence(
+    system_name: String,
+    sequence_data: serde_json::Value,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetClapPattern(array_pattern));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_delay_send(send: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetDelaySend(send));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_reverb_send(send: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetReverbSend(send));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_delay_freeze(freeze: bool, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetDelayFreeze(freeze));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_kick_attack(attack: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetKickAmpAttack(attack));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_kick_release(release: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetKickAmpRelease(release));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_clap_density(density: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetClapDensity(density));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_kick_loop_bias(bias: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetKickLoopBias(bias));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_clap_loop_bias(bias: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetClapLoopBias(bias));
-    Ok(())
-}
-
-#[tauri::command]
-fn generate_kick_pattern(state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::GenerateKickPattern);
-    Ok(())
-}
-
-#[tauri::command]
-fn generate_clap_pattern(state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::GenerateClapPattern);
-    Ok(())
-}
-
-#[tauri::command]
-fn set_kick_volume(volume: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetKickVolume(volume));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_clap_volume(volume: f32, state: State<'_, AppState>) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetClapVolume(volume));
+    sender.send(AudioCommand::SetSequence {
+        system_name,
+        sequence_data,
+    });
     Ok(())
 }
 
@@ -265,24 +151,9 @@ pub fn run() -> ExitCode {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
-            stop_audio,
-            resume_audio,
-            set_bpm,
-            set_kick_pattern,
-            set_clap_pattern,
-            set_delay_send,
-            set_reverb_send,
-            set_delay_freeze,
-            set_kick_attack,
-            set_kick_release,
-            set_clap_density,
-            set_kick_loop_bias,
-            set_clap_loop_bias,
-            generate_kick_pattern,
-            generate_clap_pattern,
-            set_kick_volume,
-            set_clap_volume
+            send_audio_event,
+            switch_audio_system,
+            set_sequence
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

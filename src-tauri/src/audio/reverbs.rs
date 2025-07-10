@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use crate::audio::delays::DelayLine;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
-use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
+use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, AudioNode};
 
 // Fast Hadamard Transform for 8x8
 fn fast_hadamard_transform_8(signals: &mut [f32; 8]) {
@@ -227,6 +227,9 @@ pub struct FDNReverb {
 
     // Feedback stage for late reverberation
     feedback_stage: FeedbackStage,
+    
+    // Gain for AudioNode implementation
+    gain: f32,
 }
 
 // Design from https://signalsmith-audio.co.uk/writing/2021/lets-write-a-reverb/
@@ -245,6 +248,7 @@ impl FDNReverb {
         Self {
             diffusion_stages,
             feedback_stage,
+            gain: 1.0,
         }
     }
 
@@ -262,6 +266,10 @@ impl FDNReverb {
 
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         self.feedback_stage.set_sample_rate(sample_rate);
+    }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
     }
 }
 
@@ -289,6 +297,39 @@ impl StereoAudioProcessor for FDNReverb {
         }
 
         (out_left, out_right)
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.set_sample_rate(sample_rate);
+    }
+}
+
+impl AudioNode for FDNReverb {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+        (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            "set_feedback" => {
+                self.set_feedback(parameter);
+                Ok(())
+            }
+            "set_size" => {
+                self.set_size(parameter);
+                Ok(())
+            }
+            "set_modulation_depth" => {
+                self.set_modulation_depth(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -357,21 +398,21 @@ mod tests {
         reverb.set_modulation_depth(1.0); // Full modulation
 
         // Process impulse and capture modulated reverb tail
-        let _impulse = reverb.process_stereo(1.0, 0.5);
+        let _impulse = AudioNode::process_stereo(&mut reverb, 1.0, 0.5);
 
         let mut outputs_l = Vec::new();
         let mut outputs_r = Vec::new();
 
         // Process samples to hear modulated reverb tail
         for _ in 0..(0.5 * sample_rate) as usize {
-            let (out_l, out_r) = reverb.process_stereo(0.0, 0.0);
+            let (out_l, out_r) = AudioNode::process_stereo(&mut reverb, 0.0, 0.0);
             outputs_l.push(out_l);
             outputs_r.push(out_r);
         }
 
         // Should produce stable modulated reverb
-        let max_amp_l = outputs_l.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
-        let max_amp_r = outputs_r.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let max_amp_l = outputs_l.iter().map(|x: &f32| x.abs()).fold(0.0f32, f32::max);
+        let max_amp_r = outputs_r.iter().map(|x: &f32| x.abs()).fold(0.0f32, f32::max);
 
         assert!(
             max_amp_l < 2.0,
@@ -462,12 +503,19 @@ pub struct DownsampledReverb {
     aa_filter_right_1: OnePoleFilter,
     aa_filter_right_2: OnePoleFilter,
 
+    // High-pass filters (300Hz cutoff)
+    hp_filter_left: OnePoleFilter,
+    hp_filter_right: OnePoleFilter,
+
     // Sample counter for 2:1 downsampling
     sample_counter: bool,
 
     // Output hold for upsampling
     output_hold_left: f32,
     output_hold_right: f32,
+    
+    // Gain for AudioNode implementation
+    gain: f32,
 }
 
 impl DownsampledReverb {
@@ -476,33 +524,46 @@ impl DownsampledReverb {
         let reverb = FDNReverb::new(target_sample_rate);
 
         // Anti-aliasing filter at 10kHz
-        let filter_freq = 10000.0;
+        let aa_filter_freq = 10000.0;
+        // High-pass filter at 300Hz
+        let hp_filter_freq = 300.0;
 
         Self {
             reverb,
             aa_filter_left_1: OnePoleFilter::new(
-                filter_freq,
+                aa_filter_freq,
                 OnePoleMode::Lowpass,
                 original_sample_rate,
             ),
             aa_filter_left_2: OnePoleFilter::new(
-                filter_freq,
+                aa_filter_freq,
                 OnePoleMode::Lowpass,
                 original_sample_rate,
             ),
             aa_filter_right_1: OnePoleFilter::new(
-                filter_freq,
+                aa_filter_freq,
                 OnePoleMode::Lowpass,
                 original_sample_rate,
             ),
             aa_filter_right_2: OnePoleFilter::new(
-                filter_freq,
+                aa_filter_freq,
                 OnePoleMode::Lowpass,
+                original_sample_rate,
+            ),
+            hp_filter_left: OnePoleFilter::new(
+                hp_filter_freq,
+                OnePoleMode::Highpass,
+                original_sample_rate,
+            ),
+            hp_filter_right: OnePoleFilter::new(
+                hp_filter_freq,
+                OnePoleMode::Highpass,
                 original_sample_rate,
             ),
             sample_counter: false,
             output_hold_left: 0.0,
             output_hold_right: 0.0,
+            gain: 1.0,
         }
     }
 
@@ -513,22 +574,30 @@ impl DownsampledReverb {
     pub fn set_size(&mut self, size: f32) {
         self.reverb.set_size(size);
     }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
 }
 
 impl StereoAudioProcessor for DownsampledReverb {
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Apply 2-stage anti-aliasing filter
+        // Apply high-pass filter first (300Hz)
+        let hp_left = self.hp_filter_left.process(left);
+        let hp_right = self.hp_filter_right.process(right);
+        
+        // Apply 2-stage anti-aliasing filter (10kHz lowpass)
         let filtered_left = self
             .aa_filter_left_2
-            .process(self.aa_filter_left_1.process(left));
+            .process(self.aa_filter_left_1.process(hp_left));
         let filtered_right = self
             .aa_filter_right_2
-            .process(self.aa_filter_right_1.process(right));
+            .process(self.aa_filter_right_1.process(hp_right));
 
         // Process reverb only on every other sample (2:1 downsampling)
         if self.sample_counter {
             let (reverb_left, reverb_right) =
-                self.reverb.process_stereo(filtered_left, filtered_right);
+                StereoAudioProcessor::process_stereo(&mut self.reverb, filtered_left, filtered_right);
             self.output_hold_left = reverb_left;
             self.output_hold_right = reverb_right;
         }
@@ -543,5 +612,34 @@ impl StereoAudioProcessor for DownsampledReverb {
     fn set_sample_rate(&mut self, sample_rate: f32) {
         // Destroy and recreate everything with new sample rate
         *self = Self::new(sample_rate);
+    }
+}
+
+impl AudioNode for DownsampledReverb {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+        (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            "set_feedback" => {
+                self.set_feedback(parameter);
+                Ok(())
+            }
+            "set_size" => {
+                self.set_size(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        StereoAudioProcessor::set_sample_rate(self, sample_rate);
     }
 }

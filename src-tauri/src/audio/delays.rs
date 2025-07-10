@@ -1,6 +1,6 @@
 use crate::audio::buffers::DelayBuffer;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
-use crate::audio::AudioProcessor;
+use crate::audio::{AudioProcessor, AudioNode};
 
 // Simple delay line without filtering
 pub struct DelayLine {
@@ -8,6 +8,7 @@ pub struct DelayLine {
     frozen: bool,
     feedback: f32,
     sample_rate: f32,
+    gain: f32,
 }
 
 impl DelayLine {
@@ -17,6 +18,7 @@ impl DelayLine {
             frozen: false,
             feedback: 0.0,
             sample_rate,
+            gain: 1.0,
         }
     }
 
@@ -49,6 +51,10 @@ impl DelayLine {
     pub fn advance(&mut self) {
         self.buffer.advance();
     }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
 }
 
 impl AudioProcessor for DelayLine {
@@ -67,11 +73,46 @@ impl AudioProcessor for DelayLine {
     }
 }
 
+impl AudioNode for DelayLine {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let mono_in = (left_in + right_in) * 0.5;
+        let delayed = self.process(mono_in) * self.gain;
+        (left_in + delayed, right_in + delayed)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            "set_feedback" => {
+                self.set_feedback(parameter);
+                Ok(())
+            }
+            "set_delay_seconds" => {
+                self.set_delay_seconds(parameter);
+                Ok(())
+            }
+            "set_freeze" => {
+                self.set_freeze(parameter != 0.0);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        AudioProcessor::set_sample_rate(self, sample_rate);
+    }
+}
+
 // Delay line with filtering
 pub struct FilteredDelayLine {
     delay_line: DelayLine,
     highpass: OnePoleFilter,
     lowpass: OnePoleFilter,
+    gain: f32,
 }
 
 impl FilteredDelayLine {
@@ -80,6 +121,7 @@ impl FilteredDelayLine {
             delay_line: DelayLine::new(max_delay_seconds, sample_rate),
             highpass: OnePoleFilter::new(300.0, OnePoleMode::Highpass, sample_rate),
             lowpass: OnePoleFilter::new(8000.0, OnePoleMode::Lowpass, sample_rate),
+            gain: 1.0,
         }
     }
 
@@ -114,6 +156,10 @@ impl FilteredDelayLine {
     pub fn write(&mut self, input: f32, output: f32) {
         self.delay_line.write(input, output);
     }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
 }
 
 impl AudioProcessor for FilteredDelayLine {
@@ -131,9 +177,51 @@ impl AudioProcessor for FilteredDelayLine {
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
-        self.delay_line.set_sample_rate(sample_rate);
+        AudioProcessor::set_sample_rate(&mut self.delay_line, sample_rate);
         self.highpass.set_sample_rate(sample_rate);
         self.lowpass.set_sample_rate(sample_rate);
+    }
+}
+
+impl AudioNode for FilteredDelayLine {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let mono_in = (left_in + right_in) * 0.5;
+        let delayed = self.process(mono_in) * self.gain;
+        (left_in + delayed, right_in + delayed)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            "set_feedback" => {
+                self.set_feedback(parameter);
+                Ok(())
+            }
+            "set_delay_seconds" => {
+                self.set_delay_seconds(parameter);
+                Ok(())
+            }
+            "set_freeze" => {
+                self.set_freeze(parameter != 0.0);
+                Ok(())
+            }
+            "set_highpass_freq" => {
+                self.set_highpass_freq(parameter);
+                Ok(())
+            }
+            "set_lowpass_freq" => {
+                self.set_lowpass_freq(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        AudioProcessor::set_sample_rate(self, sample_rate);
     }
 }
 #[cfg(test)]

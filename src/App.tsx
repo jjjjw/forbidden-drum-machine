@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { StepGrid } from "./components/StepGrid";
+import { AuditionerPage } from "./components/AuditionerPage";
 import "./App.css";
 
 function App() {
@@ -68,6 +69,9 @@ function App() {
   // Volume controls
   const [kickVolume, setKickVolume] = useState(0.8);
   const [clapVolume, setClapVolume] = useState(0.6);
+
+  // Navigation state
+  const [currentSystem, setCurrentSystem] = useState<'drum_machine' | 'auditioner'>('drum_machine');
 
   // Listen for events from audio thread
   useEffect(() => {
@@ -139,9 +143,14 @@ function App() {
 
   async function stopAudio() {
     try {
-      const result = await invoke("stop_audio");
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system", 
+        eventName: "set_paused",
+        parameter: 1.0
+      });
       setAudioPaused(true);
-      setStatus(result as string);
+      setStatus("Audio paused");
     } catch (error) {
       setStatus(`Error: ${error}`);
     }
@@ -149,9 +158,14 @@ function App() {
 
   async function resumeAudio() {
     try {
-      const result = await invoke("resume_audio");
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system",
+        eventName: "set_paused", 
+        parameter: 0.0
+      });
       setAudioPaused(false);
-      setStatus(result as string);
+      setStatus("Audio resumed");
     } catch (error) {
       setStatus(`Error: ${error}`);
     }
@@ -160,7 +174,12 @@ function App() {
   async function updateBpm(newBpm: number) {
     setBpm(newBpm);
     try {
-      await invoke("set_bpm", { bpm: newBpm });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system",
+        eventName: "set_bpm",
+        parameter: newBpm
+      });
     } catch (error) {
       setStatus(`Error setting BPM: ${error}`);
     }
@@ -169,7 +188,10 @@ function App() {
   async function updateKickPattern(newPattern: boolean[]) {
     setKickPattern(newPattern);
     try {
-      await invoke("set_kick_pattern", { pattern: newPattern });
+      await invoke("set_sequence", {
+        systemName: "drum_machine",
+        sequenceData: { kick_pattern: newPattern }
+      });
     } catch (error) {
       setStatus(`Error setting kick pattern: ${error}`);
     }
@@ -184,7 +206,12 @@ function App() {
   async function updateDelaySend(value: number) {
     setDelaySend(value);
     try {
-      await invoke("set_delay_send", { send: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "delay",
+        eventName: "set_send",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting delay send: ${error}`);
     }
@@ -193,7 +220,12 @@ function App() {
   async function updateReverbSend(value: number) {
     setReverbSend(value);
     try {
-      await invoke("set_reverb_send", { send: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "reverb",
+        eventName: "set_send",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting reverb send: ${error}`);
     }
@@ -203,7 +235,12 @@ function App() {
     const newFreeze = !delayFreeze;
     setDelayFreeze(newFreeze);
     try {
-      await invoke("set_delay_freeze", { freeze: newFreeze });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "delay",
+        eventName: "set_freeze",
+        parameter: newFreeze ? 1.0 : 0.0
+      });
     } catch (error) {
       setStatus(`Error setting delay freeze: ${error}`);
     }
@@ -212,7 +249,12 @@ function App() {
   async function updateKickAttack(value: number) {
     setKickAttack(value);
     try {
-      await invoke("set_kick_attack", { attack: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "kick",
+        eventName: "set_attack",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting kick attack: ${error}`);
     }
@@ -221,7 +263,12 @@ function App() {
   async function updateKickRelease(value: number) {
     setKickRelease(value);
     try {
-      await invoke("set_kick_release", { release: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "kick",
+        eventName: "set_release",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting kick release: ${error}`);
     }
@@ -230,7 +277,10 @@ function App() {
   async function updateClapPattern(newPattern: boolean[]) {
     setClapPattern(newPattern);
     try {
-      await invoke("set_clap_pattern", { pattern: newPattern });
+      await invoke("set_sequence", {
+        systemName: "drum_machine",
+        sequenceData: { clap_pattern: newPattern }
+      });
     } catch (error) {
       setStatus(`Error setting clap pattern: ${error}`);
     }
@@ -245,7 +295,12 @@ function App() {
   async function updateMarkovDensity(value: number) {
     setMarkovDensity(value);
     try {
-      await invoke("set_clap_density", { density: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "clap",
+        eventName: "set_density",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting markov density: ${error}`);
     }
@@ -253,7 +308,12 @@ function App() {
 
   async function generateKickPattern() {
     try {
-      await invoke("generate_kick_pattern");
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system",
+        eventName: "generate_kick_pattern",
+        parameter: 0.0
+      });
     } catch (error) {
       setStatus(`Error generating kick pattern: ${error}`);
     }
@@ -261,7 +321,12 @@ function App() {
 
   async function generateClapPattern() {
     try {
-      await invoke("generate_clap_pattern");
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system",
+        eventName: "generate_clap_pattern",
+        parameter: 0.0
+      });
     } catch (error) {
       setStatus(`Error generating clap pattern: ${error}`);
     }
@@ -270,7 +335,12 @@ function App() {
   async function updateKickLoopBias(value: number) {
     setKickLoopBias(value);
     try {
-      await invoke("set_kick_loop_bias", { bias: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "kick",
+        eventName: "set_loop_bias",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting kick loop bias: ${error}`);
     }
@@ -279,7 +349,12 @@ function App() {
   async function updateClapLoopBias(value: number) {
     setClapLoopBias(value);
     try {
-      await invoke("set_clap_loop_bias", { bias: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "clap",
+        eventName: "set_loop_bias",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting clap loop bias: ${error}`);
     }
@@ -288,7 +363,12 @@ function App() {
   async function updateKickVolume(value: number) {
     setKickVolume(value);
     try {
-      await invoke("set_kick_volume", { volume: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "kick",
+        eventName: "set_volume",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting kick volume: ${error}`);
     }
@@ -297,20 +377,64 @@ function App() {
   async function updateClapVolume(value: number) {
     setClapVolume(value);
     try {
-      await invoke("set_clap_volume", { volume: value });
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "clap",
+        eventName: "set_volume",
+        parameter: value
+      });
     } catch (error) {
       setStatus(`Error setting clap volume: ${error}`);
     }
   }
 
+  // Handle system switching
+  const switchSystem = async (systemName: 'drum_machine' | 'auditioner') => {
+    try {
+      await invoke("switch_audio_system", { systemName });
+      setCurrentSystem(systemName);
+    } catch (error) {
+      console.error(`Error switching to ${systemName}:`, error);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8 font-mono">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-5xl font-bold text-center mb-8 bg-gradient-to-r from-purple-400 to-blue-600 bg-clip-text text-transparent">
-          Forbidden Drum Machine
-        </h1>
+        <div className="mb-8">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-400 to-blue-600 bg-clip-text text-transparent mb-6">
+            Forbidden Drum Machine
+          </h1>
+          
+          {/* System Tabs */}
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => switchSystem('drum_machine')}
+              className={`px-6 py-3 rounded-lg font-bold transition-all ${
+                currentSystem === 'drum_machine'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Drum Machine
+            </button>
+            <button
+              onClick={() => switchSystem('auditioner')}
+              className={`px-6 py-3 rounded-lg font-bold transition-all ${
+                currentSystem === 'auditioner'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Auditioner
+            </button>
+          </div>
+        </div>
 
-        {/* Audio Control & Status */}
+        {/* Render system-specific content */}
+        {currentSystem === 'drum_machine' && (
+          <>
+            {/* Audio Control & Status */}
         <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
           <h2 className="text-2xl font-bold mb-4 text-green-400">
             Playback Control
@@ -650,6 +774,13 @@ function App() {
             </div>
           </div>
         </div>
+          </>
+        )}
+
+        {/* Auditioner System */}
+        {currentSystem === 'auditioner' && (
+          <AuditionerPage onBack={() => {}} isPaused={audioPaused} />
+        )}
       </div>
     </main>
   );

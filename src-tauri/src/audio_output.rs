@@ -1,5 +1,6 @@
-use crate::audio::systems::DrumMachine;
-use crate::commands::AudioCommandReceiver;
+use crate::audio::server::AudioServer;
+use crate::audio::systems::{DrumMachineSystem, AuditionerSystem};
+use crate::commands::{AudioCommand, AudioCommandReceiver};
 use crate::events::AudioEventSender;
 use cpal::{traits::*, Sample};
 
@@ -22,26 +23,37 @@ impl AudioOutput {
 
         println!("Audio device sample rate: {}", sample_rate);
 
-        // Create drum machine with the actual device sample rate and event sender
-        let drum_machine = DrumMachine::new(sample_rate, event_sender);
+        // Create audio server with both systems
+        let mut audio_server = AudioServer::new(sample_rate);
+        
+        // Create and add drum machine system
+        let drum_machine_system = DrumMachineSystem::new(sample_rate, event_sender.clone());
+        audio_server.add_system("drum_machine".to_string(), Box::new(drum_machine_system));
+        
+        // Create and add auditioner system
+        let auditioner_system = AuditionerSystem::new(sample_rate);
+        audio_server.add_system("auditioner".to_string(), Box::new(auditioner_system));
+        
+        // Start with drum machine as default
+        audio_server.switch_to_system("drum_machine").unwrap();
 
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => Self::run::<f32>(
                 &device,
                 &config.into(),
-                drum_machine,
+                audio_server,
                 command_receiver,
             )?,
             cpal::SampleFormat::I16 => Self::run::<i16>(
                 &device,
                 &config.into(),
-                drum_machine,
+                audio_server,
                 command_receiver,
             )?,
             cpal::SampleFormat::U16 => Self::run::<u16>(
                 &device,
                 &config.into(),
-                drum_machine,
+                audio_server,
                 command_receiver,
             )?,
             _ => return Err("Unsupported sample format".into()),
@@ -55,7 +67,7 @@ impl AudioOutput {
     fn run<T>(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
-        drum_machine: DrumMachine,
+        audio_server: AudioServer,
         command_receiver: AudioCommandReceiver,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
@@ -66,16 +78,44 @@ impl AudioOutput {
         let stream = device.build_output_stream(
             config,
             {
-                let mut drum_machine = drum_machine;
+                let mut audio_server = audio_server;
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     // Process pending commands at the start of the buffer
                     command_receiver.process_commands(|command| {
-                        drum_machine.apply_command(command);
+                        match command {
+                            AudioCommand::SendNodeEvent {
+                                system_name,
+                                node_name,
+                                event_name,
+                                parameter,
+                            } => {
+                                if let Err(e) = audio_server.send_node_event(&system_name, &node_name, &event_name, parameter) {
+                                    eprintln!("Error sending node event: {}", e);
+                                }
+                            }
+                            AudioCommand::SwitchSystem(system_name) => {
+                                if let Err(e) = audio_server.switch_to_system(&system_name) {
+                                    eprintln!("Error switching system: {}", e);
+                                }
+                            }
+                            AudioCommand::SetSequence {
+                                system_name,
+                                sequence_data,
+                            } => {
+                                if let Some(system) = audio_server.get_system_mut(&system_name) {
+                                    if let Err(e) = system.set_sequence(&sequence_data) {
+                                        eprintln!("Error setting sequence: {}", e);
+                                    }
+                                } else {
+                                    eprintln!("System '{}' not found", system_name);
+                                }
+                            }
+                        }
                     });
 
                     // Process all frames
                     for frame in data.chunks_mut(channels) {
-                        let (left, right) = drum_machine.next_sample();
+                        let (left, right) = audio_server.process_stereo(0.0, 0.0);
 
                         // Limiting and NaN protection
                         let left = if left.is_finite() {

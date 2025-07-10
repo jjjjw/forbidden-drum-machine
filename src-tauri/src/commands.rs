@@ -3,26 +3,17 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
-    SetBpm(f32),
-    SetKickPattern([bool; 16]),
-    SetClapPattern([bool; 16]),
-    SetKickAmpAttack(f32),
-    SetKickAmpRelease(f32),
-    SetDelaySend(f32),
-    SetReverbSend(f32),
-    SetDelayFreeze(bool),
-    SetDelayHighpass(f32),
-    SetDelayLowpass(f32),
-    SetReverbSize(f32),
-    SetReverbDecay(f32),
-    SetClapDensity(f32),
-    SetKickLoopBias(f32),
-    SetClapLoopBias(f32),
-    GenerateKickPattern,
-    GenerateClapPattern,
-    SetPaused(bool),
-    SetKickVolume(f32),
-    SetClapVolume(f32),
+    SendNodeEvent {
+        system_name: String,
+        node_name: String,
+        event_name: String,
+        parameter: f32,
+    },
+    SwitchSystem(String),
+    SetSequence {
+        system_name: String,
+        sequence_data: serde_json::Value,
+    },
 }
 
 /// Lock-free command queue for audio parameter changes

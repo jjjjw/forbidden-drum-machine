@@ -1,7 +1,7 @@
 use crate::audio::envelopes::{AREnvelope, Segment};
 use crate::audio::filters::{FilterMode, SVF};
 use crate::audio::oscillators::{NoiseGenerator, SineOscillator};
-use crate::audio::{AudioGenerator, AudioProcessor};
+use crate::audio::{AudioGenerator, AudioProcessor, AudioNode};
 
 pub struct KickDrum {
     oscillator: SineOscillator,
@@ -9,6 +9,7 @@ pub struct KickDrum {
     freq_envelope: AREnvelope,
     base_frequency: f32,
     frequency_mod_amount: f32,
+    gain: f32,
 }
 
 impl KickDrum {
@@ -19,6 +20,7 @@ impl KickDrum {
             freq_envelope: AREnvelope::new(sample_rate),
             base_frequency: 60.0,
             frequency_mod_amount: 40.0,
+            gain: 1.0,
         };
 
         kick.amp_envelope.set_attack_time(0.005);
@@ -67,6 +69,10 @@ impl KickDrum {
     pub fn is_active(&self) -> bool {
         self.amp_envelope.is_active()
     }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
 }
 
 impl AudioGenerator for KickDrum {
@@ -89,6 +95,55 @@ impl AudioGenerator for KickDrum {
         self.oscillator.set_sample_rate(sample_rate);
         self.amp_envelope.set_sample_rate(sample_rate);
         self.freq_envelope.set_sample_rate(sample_rate);
+    }
+}
+
+impl AudioNode for KickDrum {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let drum_sample = self.next_sample() * self.gain;
+        (left_in + drum_sample, right_in + drum_sample)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "trigger" => {
+                self.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            "set_base_frequency" => {
+                self.set_base_frequency(parameter);
+                Ok(())
+            }
+            "set_frequency_mod_amount" => {
+                self.set_frequency_mod_amount(parameter);
+                Ok(())
+            }
+            "set_amp_attack" => {
+                self.set_amp_attack(parameter);
+                Ok(())
+            }
+            "set_amp_release" => {
+                self.set_amp_release(parameter);
+                Ok(())
+            }
+            "set_freq_attack" => {
+                self.set_freq_attack(parameter);
+                Ok(())
+            }
+            "set_freq_release" => {
+                self.set_freq_release(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        AudioGenerator::set_sample_rate(self, sample_rate);
     }
 }
 
@@ -166,6 +221,7 @@ pub struct ClapDrum {
     right_active: bool,
 
     sample_rate: f32,
+    gain: f32,
 }
 
 impl ClapDrum {
@@ -196,6 +252,7 @@ impl ClapDrum {
             right_active: true, // Right channel also active but could be varied
 
             sample_rate,
+            gain: 1.0,
         }
     }
 
@@ -216,6 +273,10 @@ impl ClapDrum {
 
     pub fn is_active(&self) -> bool {
         self.is_envelope_active
+    }
+
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
     }
 
     fn update_envelope(&mut self) {
@@ -300,5 +361,30 @@ impl AudioGenerator for ClapDrum {
         for segment in &mut self.envelope_segments {
             segment.set_sample_rate(sample_rate);
         }
+    }
+}
+
+impl AudioNode for ClapDrum {
+    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (clap_left, clap_right) = self.next_sample_stereo();
+        (left_in + clap_left * self.gain, right_in + clap_right * self.gain)
+    }
+
+    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
+        match event_type {
+            "trigger" => {
+                self.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.set_gain(parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown event type: {}", event_type))
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        AudioGenerator::set_sample_rate(self, sample_rate);
     }
 }
