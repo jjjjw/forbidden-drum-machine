@@ -1,4 +1,5 @@
 use crate::audio::buffers::DelayBuffer;
+use crate::events::NodeEvent;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::{AudioProcessor, AudioNode};
 
@@ -80,25 +81,25 @@ impl AudioNode for DelayLine {
         (left_in + delayed, right_in + delayed)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "set_gain" => {
-                self.set_gain(parameter);
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            "set_feedback" => {
-                self.set_feedback(parameter);
+            NodeEvent::SetFeedback(feedback) => {
+                self.set_feedback(feedback);
                 Ok(())
             }
-            "set_delay_seconds" => {
-                self.set_delay_seconds(parameter);
+            NodeEvent::SetDelaySeconds(seconds) => {
+                self.set_delay_seconds(seconds);
                 Ok(())
             }
-            "set_freeze" => {
-                self.set_freeze(parameter != 0.0);
+            NodeEvent::SetFreeze(freeze) => {
+                self.set_freeze(freeze);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for DelayLine: {:?}", event))
         }
     }
 
@@ -190,33 +191,33 @@ impl AudioNode for FilteredDelayLine {
         (left_in + delayed, right_in + delayed)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "set_gain" => {
-                self.set_gain(parameter);
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            "set_feedback" => {
-                self.set_feedback(parameter);
+            NodeEvent::SetFeedback(feedback) => {
+                self.set_feedback(feedback);
                 Ok(())
             }
-            "set_delay_seconds" => {
-                self.set_delay_seconds(parameter);
+            NodeEvent::SetDelaySeconds(seconds) => {
+                self.set_delay_seconds(seconds);
                 Ok(())
             }
-            "set_freeze" => {
-                self.set_freeze(parameter != 0.0);
+            NodeEvent::SetFreeze(freeze) => {
+                self.set_freeze(freeze);
                 Ok(())
             }
-            "set_highpass_freq" => {
-                self.set_highpass_freq(parameter);
+            NodeEvent::SetHighpassFreq(freq) => {
+                self.set_highpass_freq(freq);
                 Ok(())
             }
-            "set_lowpass_freq" => {
-                self.set_lowpass_freq(parameter);
+            NodeEvent::SetLowpassFreq(freq) => {
+                self.set_lowpass_freq(freq);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for FilteredDelayLine: {:?}", event))
         }
     }
 

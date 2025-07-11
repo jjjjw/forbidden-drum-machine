@@ -1,4 +1,5 @@
 use crate::audio::envelopes::{AREnvelope, Segment};
+use crate::events::NodeEvent;
 use crate::audio::filters::{FilterMode, SVF};
 use crate::audio::oscillators::{NoiseGenerator, SineOscillator};
 use crate::audio::{AudioGenerator, AudioProcessor, AudioNode};
@@ -104,41 +105,41 @@ impl AudioNode for KickDrum {
         (left_in + drum_sample, right_in + drum_sample)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "trigger" => {
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::Trigger => {
                 self.trigger();
                 Ok(())
             }
-            "set_gain" => {
-                self.set_gain(parameter);
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            "set_base_frequency" => {
-                self.set_base_frequency(parameter);
+            NodeEvent::SetBaseFrequency(freq) => {
+                self.set_base_frequency(freq);
                 Ok(())
             }
-            "set_frequency_mod_amount" => {
-                self.set_frequency_mod_amount(parameter);
+            NodeEvent::SetFrequencyModAmount(amount) => {
+                self.set_frequency_mod_amount(amount);
                 Ok(())
             }
-            "set_amp_attack" => {
-                self.set_amp_attack(parameter);
+            NodeEvent::SetAmpAttack(time) => {
+                self.set_amp_attack(time);
                 Ok(())
             }
-            "set_amp_release" => {
-                self.set_amp_release(parameter);
+            NodeEvent::SetAmpRelease(time) => {
+                self.set_amp_release(time);
                 Ok(())
             }
-            "set_freq_attack" => {
-                self.set_freq_attack(parameter);
+            NodeEvent::SetFreqAttack(time) => {
+                self.set_freq_attack(time);
                 Ok(())
             }
-            "set_freq_release" => {
-                self.set_freq_release(parameter);
+            NodeEvent::SetFreqRelease(time) => {
+                self.set_freq_release(time);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for KickDrum: {:?}", event))
         }
     }
 
@@ -370,17 +371,17 @@ impl AudioNode for ClapDrum {
         (left_in + clap_left * self.gain, right_in + clap_right * self.gain)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "trigger" => {
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::Trigger => {
                 self.trigger();
                 Ok(())
             }
-            "set_gain" => {
-                self.set_gain(parameter);
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for ClapDrum: {:?}", event))
         }
     }
 

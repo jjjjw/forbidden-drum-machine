@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::audio::delays::DelayLine;
+use crate::events::NodeEvent;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
 use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, AudioNode};
@@ -504,25 +505,25 @@ impl AudioNode for FDNReverb {
         (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "set_gain" => {
-                self.set_gain(parameter);
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            "set_feedback" => {
-                self.set_feedback(parameter);
+            NodeEvent::SetFeedback(feedback) => {
+                self.set_feedback(feedback);
                 Ok(())
             }
-            "set_size" => {
-                self.set_size(parameter);
+            NodeEvent::SetSize(size) => {
+                self.set_size(size);
                 Ok(())
             }
-            "set_modulation_depth" => {
-                self.set_modulation_depth(parameter);
+            NodeEvent::SetModulationDepth(depth) => {
+                self.set_modulation_depth(depth);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for FDN reverb: {:?}", event))
         }
     }
 
@@ -835,29 +836,29 @@ impl AudioNode for ReverbLite {
         (left_in + reverb_left, right_in + reverb_right)
     }
     
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "set_feedback" => {
-                self.set_feedback(parameter);
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::SetFeedback(feedback) => {
+                self.set_feedback(feedback);
                 Ok(())
             }
-            "set_damping" => {
-                self.set_damping(parameter);
+            NodeEvent::SetDamping(damping) => {
+                self.set_damping(damping);
                 Ok(())
             }
-            "set_size" => {
-                self.set_size(parameter);
+            NodeEvent::SetSize(size) => {
+                self.set_size(size);
                 Ok(())
             }
-            "set_modulation_depth" => {
-                self.set_modulation_depth(parameter);
+            NodeEvent::SetModulationDepth(depth) => {
+                self.set_modulation_depth(depth);
                 Ok(())
             }
-            "set_gain" => {
-                self.set_gain(parameter);
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for ReverbLite: {:?}", event))
         }
     }
     
@@ -994,21 +995,21 @@ impl AudioNode for DownsampledReverb {
         (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "set_gain" => {
-                self.set_gain(parameter);
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            "set_feedback" => {
-                self.set_feedback(parameter);
+            NodeEvent::SetFeedback(feedback) => {
+                self.set_feedback(feedback);
                 Ok(())
             }
-            "set_size" => {
-                self.set_size(parameter);
+            NodeEvent::SetSize(size) => {
+                self.set_size(size);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for DownsampledReverb: {:?}", event))
         }
     }
 
@@ -1153,29 +1154,29 @@ impl AudioNode for DownsampledReverbLite {
         (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
     }
 
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        match event_type {
-            "set_gain" => {
-                self.set_gain(parameter);
+    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
+        match event {
+            NodeEvent::SetGain(gain) => {
+                self.set_gain(gain);
                 Ok(())
             }
-            "set_feedback" => {
-                self.set_feedback(parameter);
+            NodeEvent::SetFeedback(feedback) => {
+                self.set_feedback(feedback);
                 Ok(())
             }
-            "set_damping" => {
-                self.set_damping(parameter);
+            NodeEvent::SetDamping(damping) => {
+                self.set_damping(damping);
                 Ok(())
             }
-            "set_size" => {
-                self.set_size(parameter);
+            NodeEvent::SetSize(size) => {
+                self.set_size(size);
                 Ok(())
             }
-            "set_modulation_depth" => {
-                self.set_modulation_depth(parameter);
+            NodeEvent::SetModulationDepth(depth) => {
+                self.set_modulation_depth(depth);
                 Ok(())
             }
-            _ => Err(format!("Unknown event type: {}", event_type))
+            _ => Err(format!("Unsupported event for DownsampledReverbLite: {:?}", event))
         }
     }
 

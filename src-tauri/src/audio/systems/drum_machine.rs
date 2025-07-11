@@ -1,10 +1,10 @@
-use crate::audio::{AudioSystem, AudioNode};
-use crate::audio::instruments::{KickDrum, ClapDrum};
 use crate::audio::delays::FilteredDelayLine;
-use crate::audio::reverbs::DownsampledReverb;
+use crate::audio::instruments::{ClapDrum, KickDrum};
 use crate::audio::modulators::SampleAndHold;
+use crate::audio::reverbs::DownsampledReverbLite;
+use crate::audio::{AudioNode, AudioSystem};
+use crate::events::{ServerEvent, ServerEventSender};
 use crate::sequencing::{BiasedLoop, Clock, MarkovChain};
-use crate::events::{AudioEvent, AudioEventSender};
 
 // Calculate the number of samples for 4 beats based on BPM and sample rate
 fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
@@ -16,8 +16,8 @@ pub struct DrumMachineSystem {
     kick: KickDrum,
     clap: ClapDrum,
     delay: FilteredDelayLine,
-    reverb: DownsampledReverb,
-    
+    reverb: DownsampledReverbLite,
+
     // Sequencer
     clock: Clock,
     kick_loop: BiasedLoop,
@@ -29,7 +29,7 @@ pub struct DrumMachineSystem {
     markov_generator: MarkovChain,
 
     // Event sender for communicating with UI
-    event_sender: AudioEventSender,
+    event_sender: ServerEventSender,
 
     // Track previous steps for event emission
     prev_kick_step: Option<u8>,
@@ -50,7 +50,7 @@ pub struct DrumMachineSystem {
 }
 
 impl DrumMachineSystem {
-    pub fn new(sample_rate: f32, event_sender: AudioEventSender) -> Self {
+    pub fn new(sample_rate: f32, event_sender: ServerEventSender) -> Self {
         // Initialize clocks and Markov generator
         let total_samples_in_loop = bpm_to_samples(120.0, sample_rate);
         let clock = Clock::new();
@@ -63,8 +63,8 @@ impl DrumMachineSystem {
             kick: KickDrum::new(sample_rate),
             clap: ClapDrum::new(sample_rate),
             delay: FilteredDelayLine::new(0.5, sample_rate), // 0.5 seconds max delay
-            reverb: DownsampledReverb::new(sample_rate),
-            
+            reverb: DownsampledReverbLite::new(sample_rate),
+
             clock,
             kick_loop,
             clap_loop,
@@ -116,23 +116,6 @@ impl DrumMachineSystem {
         self.is_paused = paused;
     }
 
-    // Add methods to send node events
-    pub fn send_kick_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        self.kick.handle_event(event_type, parameter)
-    }
-
-    pub fn send_clap_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        self.clap.handle_event(event_type, parameter)
-    }
-
-    pub fn send_delay_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        self.delay.handle_event(event_type, parameter)
-    }
-
-    pub fn send_reverb_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String> {
-        self.reverb.handle_event(event_type, parameter)
-    }
-
     // Pattern generation methods
     pub fn generate_kick_pattern(&mut self) {
         self.kick_pattern = self
@@ -141,7 +124,7 @@ impl DrumMachineSystem {
             .try_into()
             .unwrap();
 
-        self.send_event(AudioEvent::KickPatternGenerated(self.kick_pattern));
+        self.send_event(ServerEvent::KickPatternGenerated(self.kick_pattern));
     }
 
     pub fn generate_clap_pattern(&mut self) {
@@ -151,7 +134,7 @@ impl DrumMachineSystem {
             .try_into()
             .unwrap();
 
-        self.send_event(AudioEvent::ClapPatternGenerated(self.clap_pattern));
+        self.send_event(ServerEvent::ClapPatternGenerated(self.clap_pattern));
     }
 
     pub fn set_markov_density(&mut self, density: f32) {
@@ -165,8 +148,16 @@ impl DrumMachineSystem {
     pub fn set_clap_loop_bias(&mut self, bias: f32) {
         self.clap_loop.set_bias(bias);
     }
+    
+    pub fn set_delay_send(&mut self, send: f32) {
+        self.delay_send = send.clamp(0.0, 1.0);
+    }
+    
+    pub fn set_reverb_send(&mut self, send: f32) {
+        self.reverb_send = send.clamp(0.0, 1.0);
+    }
 
-    fn send_event(&self, event: AudioEvent) {
+    fn send_event(&self, event: ServerEvent) {
         self.event_sender.send(event);
     }
 
@@ -174,7 +165,7 @@ impl DrumMachineSystem {
         let delay_time = self.delay_time_mod.get_current_value();
         let reverb_size = self.reverb_size_mod.get_current_value();
         let reverb_decay = self.reverb_decay_mod.get_current_value();
-        self.send_event(AudioEvent::ModulatorValues(
+        self.send_event(ServerEvent::ModulatorValues(
             delay_time,
             reverb_size,
             reverb_decay,
@@ -183,47 +174,58 @@ impl DrumMachineSystem {
 }
 
 impl AudioSystem for DrumMachineSystem {
-    fn handle_node_event(&mut self, node_name: &str, event_name: &str, parameter: f32) -> Result<(), String> {
+    fn handle_node_event(
+        &mut self,
+        node_name: crate::events::NodeName,
+        event: crate::events::NodeEvent,
+    ) -> Result<(), String> {
+        use crate::events::NodeName;
         match node_name {
-            "kick" => self.kick.handle_event(event_name, parameter),
-            "clap" => self.clap.handle_event(event_name, parameter),
-            "delay" => self.delay.handle_event(event_name, parameter),
-            "reverb" => self.reverb.handle_event(event_name, parameter),
-            "system" => {
-                // Handle system-level events
-                match event_name {
-                    "set_bpm" => {
-                        self.set_bpm(parameter);
-                        Ok(())
-                    }
-                    "set_paused" => {
-                        self.set_paused(parameter != 0.0);
-                        Ok(())
-                    }
-                    "set_markov_density" => {
-                        self.set_markov_density(parameter);
-                        Ok(())
-                    }
-                    "set_kick_loop_bias" => {
-                        self.set_kick_loop_bias(parameter);
-                        Ok(())
-                    }
-                    "set_clap_loop_bias" => {
-                        self.set_clap_loop_bias(parameter);
-                        Ok(())
-                    }
-                    "generate_kick_pattern" => {
-                        self.generate_kick_pattern();
-                        Ok(())
-                    }
-                    "generate_clap_pattern" => {
-                        self.generate_clap_pattern();
-                        Ok(())
-                    }
-                    _ => Err(format!("Unknown system event: {}", event_name))
-                }
+            NodeName::Kick => self.kick.handle_event(event),
+            NodeName::Clap => self.clap.handle_event(event),
+            NodeName::Delay => self.delay.handle_event(event),
+            NodeName::Reverb => self.reverb.handle_event(event),
+        }
+    }
+
+    fn handle_system_event(&mut self, event: crate::events::SystemEvent) -> Result<(), String> {
+        match event {
+            crate::events::SystemEvent::SetBpm(bpm) => {
+                self.set_bpm(bpm);
+                Ok(())
             }
-            _ => Err(format!("Unknown node: {}", node_name))
+            crate::events::SystemEvent::SetPaused(paused) => {
+                self.set_paused(paused);
+                Ok(())
+            }
+            crate::events::SystemEvent::SetMarkovDensity(density) => {
+                self.set_markov_density(density);
+                Ok(())
+            }
+            crate::events::SystemEvent::SetKickLoopBias(bias) => {
+                self.set_kick_loop_bias(bias);
+                Ok(())
+            }
+            crate::events::SystemEvent::SetClapLoopBias(bias) => {
+                self.set_clap_loop_bias(bias);
+                Ok(())
+            }
+            crate::events::SystemEvent::GenerateKickPattern => {
+                self.generate_kick_pattern();
+                Ok(())
+            }
+            crate::events::SystemEvent::GenerateClapPattern => {
+                self.generate_clap_pattern();
+                Ok(())
+            }
+            crate::events::SystemEvent::SetDelaySend(send) => {
+                self.set_delay_send(send);
+                Ok(())
+            }
+            crate::events::SystemEvent::SetReverbSend(send) => {
+                self.set_reverb_send(send);
+                Ok(())
+            }
         }
     }
 
@@ -231,18 +233,20 @@ impl AudioSystem for DrumMachineSystem {
         // Only run sequencer when not paused
         if !self.is_paused {
             self.clock.tick();
-            
+
             // Handle kick drum with biased clock and step sequencing
             if let Some(step) = self.kick_loop.tick(&self.clock) {
                 // Check if this is a new step and emit event
                 if self.prev_kick_step.map_or(true, |prev| prev != step) {
                     self.prev_kick_step = Some(step);
-                    self.send_event(AudioEvent::KickStepChanged(step));
+                    self.send_event(ServerEvent::KickStepChanged(step));
                     self.emit_modulator_values();
                 }
 
                 if self.kick_pattern[step as usize] {
-                    self.kick.handle_event("trigger", 0.0).ok();
+                    self.kick
+                        .handle_event(crate::events::NodeEvent::Trigger)
+                        .ok();
                 }
             }
 
@@ -251,11 +255,13 @@ impl AudioSystem for DrumMachineSystem {
                 // Check if this is a new step and emit event
                 if self.prev_clap_step.map_or(true, |prev| prev != step) {
                     self.prev_clap_step = Some(step);
-                    self.send_event(AudioEvent::ClapStepChanged(step));
+                    self.send_event(ServerEvent::ClapStepChanged(step));
                 }
 
                 if self.clap_pattern[step as usize] {
-                    self.clap.handle_event("trigger", 0.0).ok();
+                    self.clap
+                        .handle_event(crate::events::NodeEvent::Trigger)
+                        .ok();
                 }
             }
         }
@@ -266,27 +272,39 @@ impl AudioSystem for DrumMachineSystem {
         let modulated_reverb_decay = self.reverb_decay_mod.next_sample();
 
         // Apply modulated parameters
-        self.reverb.handle_event("set_size", modulated_reverb_size).ok();
-        self.reverb.handle_event("set_feedback", modulated_reverb_decay).ok();
-        self.delay.handle_event("set_delay_seconds", modulated_delay_time).ok();
-        self.delay.handle_event("set_feedback", 0.9).ok();
+        self.reverb
+            .handle_event(crate::events::NodeEvent::SetSize(modulated_reverb_size))
+            .ok();
+        self.reverb
+            .handle_event(crate::events::NodeEvent::SetFeedback(
+                modulated_reverb_decay,
+            ))
+            .ok();
+        self.delay
+            .handle_event(crate::events::NodeEvent::SetDelaySeconds(
+                modulated_delay_time,
+            ))
+            .ok();
+        self.delay
+            .handle_event(crate::events::NodeEvent::SetFeedback(0.9))
+            .ok();
 
         // Process through audio node chain
         // Start with input signal
         let mut signal = (left_in, right_in);
-        
+
         // Add instruments
         signal = self.kick.process_stereo(signal.0, signal.1);
         signal = self.clap.process_stereo(signal.0, signal.1);
-        
+
         // Apply sends and process through effects
         let delay_input = (signal.0 * self.delay_send, signal.1 * self.delay_send);
         let reverb_input = (signal.0 * self.reverb_send, signal.1 * self.reverb_send);
-        
+
         // Process effects
         let delay_output = self.delay.process_stereo(delay_input.0, delay_input.1);
         let reverb_output = self.reverb.process_stereo(reverb_input.0, reverb_input.1);
-        
+
         // Mix dry and wet signals with proper level management
         let dry_level = 0.6; // Leave headroom for effects
         let wet_level = 0.4; // Effects contribution
@@ -296,7 +314,6 @@ impl AudioSystem for DrumMachineSystem {
 
         (output_left, output_right)
     }
-
 
     fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String> {
         // Parse sequence configuration from JSON

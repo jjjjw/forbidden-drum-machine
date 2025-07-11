@@ -1,7 +1,7 @@
 use crate::audio::server::AudioServer;
 use crate::audio::systems::{DrumMachineSystem, AuditionerSystem};
 use crate::commands::{AudioCommand, AudioCommandReceiver};
-use crate::events::AudioEventSender;
+use crate::events::ServerEventSender;
 use cpal::{traits::*, Sample};
 
 pub struct AudioOutput {
@@ -11,7 +11,7 @@ pub struct AudioOutput {
 impl AudioOutput {
     pub fn new(
         command_receiver: AudioCommandReceiver,
-        event_sender: AudioEventSender,
+        event_sender: ServerEventSender,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let device = host
@@ -102,12 +102,8 @@ impl AudioOutput {
                                 system_name,
                                 sequence_data,
                             } => {
-                                if let Some(system) = audio_server.get_system_mut(&system_name) {
-                                    if let Err(e) = system.set_sequence(&sequence_data) {
-                                        eprintln!("Error setting sequence: {}", e);
-                                    }
-                                } else {
-                                    eprintln!("System '{}' not found", system_name);
+                                if let Err(e) = audio_server.send_set_sequence(&system_name, &sequence_data) {
+                                    eprintln!("Error setting sequence: {}", e);
                                 }
                             }
                         }

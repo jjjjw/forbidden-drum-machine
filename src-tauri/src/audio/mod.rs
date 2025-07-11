@@ -34,8 +34,8 @@ pub trait AudioNode {
     /// Process a single stereo sample (left_in, right_in) -> (left_out, right_out)
     fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32);
     
-    /// Handle a generic event with f32 parameter
-    fn handle_event(&mut self, event_type: &str, parameter: f32) -> Result<(), String>;
+    /// Handle a typed event
+    fn handle_event(&mut self, event: crate::events::NodeEvent) -> Result<(), String>;
     
     /// Set the sample rate
     fn set_sample_rate(&mut self, sample_rate: f32);
@@ -48,8 +48,11 @@ pub trait AudioSystem: Send {
     /// Process a single stereo sample through the entire system
     fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32);
     
-    /// Handle an event for a specific audio node (e.g., node_name="kick", event_name="trigger")
-    fn handle_node_event(&mut self, node_name: &str, event_name: &str, parameter: f32) -> Result<(), String>;
+    /// Handle an event for a specific audio node
+    fn handle_node_event(&mut self, node_name: crate::events::NodeName, event: crate::events::NodeEvent) -> Result<(), String>;
+    
+    /// Handle a system-level event
+    fn handle_system_event(&mut self, event: crate::events::SystemEvent) -> Result<(), String>;
     
     /// Set the sequence configuration
     fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String>;

@@ -103,22 +103,17 @@ impl AudioServer {
     }
     
     
-    /// Set the sequence for the current system
-    pub fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String> {
-        if let Some(current_name) = &self.current_system {
-            if let Some(current_system) = self.systems.get_mut(current_name) {
-                current_system.set_sequence(sequence_config)
-            } else {
-                Err("Current system not found".to_string())
-            }
+    /// Send a set sequence command to a specific system
+    pub fn send_set_sequence(
+        &mut self,
+        system_name: &str,
+        sequence_config: &serde_json::Value,
+    ) -> Result<(), String> {
+        if let Some(system) = self.systems.get_mut(system_name) {
+            system.set_sequence(sequence_config)
         } else {
-            Err("No current system".to_string())
+            Err(format!("System '{}' not found", system_name))
         }
-    }
-    
-    /// Get mutable reference to a specific system for direct access
-    pub fn get_system_mut(&mut self, name: &str) -> Option<&mut Box<dyn AudioSystem>> {
-        self.systems.get_mut(name)
     }
     
     /// Set sample rate for all systems
@@ -146,7 +141,30 @@ impl AudioServer {
         parameter: f32,
     ) -> Result<(), String> {
         if let Some(system) = self.systems.get_mut(system_name) {
-            system.handle_node_event(node_name, event_name, parameter)
+            // Check if this is actually a system event (when node_name is "system")
+            if node_name == "system" {
+                let event = crate::events::SystemEvent::from_string(event_name, parameter)?;
+                system.handle_system_event(event)
+            } else {
+                let node = crate::events::NodeName::from_string(node_name)?;
+                let event = crate::events::NodeEvent::from_string(event_name, parameter)?;
+                system.handle_node_event(node, event)
+            }
+        } else {
+            Err(format!("System '{}' not found", system_name))
+        }
+    }
+
+    /// Send a system event to a specific system
+    pub fn send_system_event(
+        &mut self,
+        system_name: &str,
+        event_name: &str,
+        parameter: f32,
+    ) -> Result<(), String> {
+        if let Some(system) = self.systems.get_mut(system_name) {
+            let event = crate::events::SystemEvent::from_string(event_name, parameter)?;
+            system.handle_system_event(event)
         } else {
             Err(format!("System '{}' not found", system_name))
         }

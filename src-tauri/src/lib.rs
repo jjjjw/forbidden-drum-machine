@@ -6,7 +6,7 @@ mod sequencing;
 
 use audio_output::AudioOutput;
 use commands::{AudioCommand, AudioCommandQueue};
-use events::{AudioEvent, AudioEventQueue};
+use events::{ServerEvent, ServerEventQueue};
 use std::process::ExitCode;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -22,25 +22,25 @@ type AppState = Mutex<AppAudioState>;
 
 /// Starts the event emitter background process that forwards audio events to the frontend
 fn start_event_emitter(
-    event_receiver: crate::events::AudioEventReceiver,
+    event_receiver: crate::events::ServerEventReceiver,
     app_handle: tauri::AppHandle,
 ) {
     std::thread::spawn(move || {
         loop {
             event_receiver.process_events(|event| match event {
-                AudioEvent::KickStepChanged(step) => {
+                ServerEvent::KickStepChanged(step) => {
                     let _ = app_handle.emit("kick_step_changed", step);
                 }
-                AudioEvent::ClapStepChanged(step) => {
+                ServerEvent::ClapStepChanged(step) => {
                     let _ = app_handle.emit("clap_step_changed", step);
                 }
-                AudioEvent::ModulatorValues(delay, size, decay) => {
+                ServerEvent::ModulatorValues(delay, size, decay) => {
                     let _ = app_handle.emit("modulator_values", (delay, size, decay));
                 }
-                AudioEvent::KickPatternGenerated(pattern) => {
+                ServerEvent::KickPatternGenerated(pattern) => {
                     let _ = app_handle.emit("kick_pattern_generated", pattern.to_vec());
                 }
-                AudioEvent::ClapPatternGenerated(pattern) => {
+                ServerEvent::ClapPatternGenerated(pattern) => {
                     let _ = app_handle.emit("clap_pattern_generated", pattern.to_vec());
                 }
             });
@@ -129,7 +129,7 @@ fn set_sequence(
 pub fn run() -> ExitCode {
     // Initialize audio system in run() scope
     let command_queue = AudioCommandQueue::new();
-    let event_queue = AudioEventQueue::new();
+    let event_queue = ServerEventQueue::new();
 
     let command_receiver = command_queue.receiver();
     let event_sender = event_queue.sender();
