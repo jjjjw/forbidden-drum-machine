@@ -1,8 +1,8 @@
 use crate::audio::envelopes::{AREnvelope, Segment};
-use crate::events::NodeEvent;
 use crate::audio::filters::{FilterMode, SVF};
 use crate::audio::oscillators::{NoiseGenerator, SineOscillator};
-use crate::audio::{AudioGenerator, AudioProcessor, AudioNode};
+use crate::audio::{AudioGenerator, AudioNode, AudioProcessor};
+use crate::events::NodeEvent;
 
 pub struct KickDrum {
     oscillator: SineOscillator,
@@ -139,7 +139,7 @@ impl AudioNode for KickDrum {
                 self.set_freq_release(time);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for KickDrum: {:?}", event))
+            _ => Err(format!("Unsupported event for KickDrum: {:?}", event)),
         }
     }
 
@@ -217,10 +217,6 @@ pub struct ClapDrum {
     envelope_value: f32,
     is_envelope_active: bool,
 
-    // For stereo output variation
-    left_active: bool,
-    right_active: bool,
-
     sample_rate: f32,
     gain: f32,
 }
@@ -249,8 +245,6 @@ impl ClapDrum {
             current_segment: 0,
             envelope_value: 0.0,
             is_envelope_active: false,
-            left_active: true,  // Left channel gets full envelope
-            right_active: true, // Right channel also active but could be varied
 
             sample_rate,
             gain: 1.0,
@@ -266,10 +260,6 @@ impl ClapDrum {
         self.envelope_value = 0.0;
         self.is_envelope_active = true;
         self.envelope_segments[0].trigger();
-
-        // Randomly vary left/right activity (mimicking SuperCollider's different left/right envelopes)
-        self.left_active = true;
-        self.right_active = fastrand::bool(); // Sometimes right channel is different
     }
 
     pub fn is_active(&self) -> bool {
@@ -307,10 +297,12 @@ impl ClapDrum {
             }
         }
     }
+}
 
-    pub fn next_sample_stereo(&mut self) -> (f32, f32) {
+impl AudioGenerator for ClapDrum {
+    fn next_sample(&mut self) -> f32 {
         if !self.is_active() {
-            return (0.0, 0.0);
+            return 0.0;
         }
 
         // Update the multi-segment envelope
@@ -319,7 +311,7 @@ impl ClapDrum {
         // Generate noise and process through three bandpass filters
         let noise = self.noise_generator.next_sample();
 
-        // Process through all three bandpass filters and sum (like SuperCollider)
+        // Process through all three bandpass filters and sum
         let filtered_1320 = self.filter_1320.process(noise);
         let filtered_1100 = self.filter_1100.process(noise);
         let filtered_1420 = self.filter_1420.process(noise);
@@ -327,28 +319,8 @@ impl ClapDrum {
         // Sum the filtered signals and apply 10dB gain (10.dbamp ≈ 3.16)
         let filtered_sum = (filtered_1320 + filtered_1100 + filtered_1420) * 3.16;
 
-        // Apply envelope and create stereo output
-        let left = if self.left_active {
-            filtered_sum * self.envelope_value
-        } else {
-            0.0
-        };
-
-        let right = if self.right_active {
-            filtered_sum * self.envelope_value
-        } else {
-            0.0
-        };
-
-        // Apply tanh saturation like SuperCollider
-        (left.tanh(), right.tanh())
-    }
-}
-
-impl AudioGenerator for ClapDrum {
-    fn next_sample(&mut self) -> f32 {
-        let (left, right) = self.next_sample_stereo();
-        (left + right) * 0.5 // Mono mix
+        // Apply envelope and tanh saturation
+        (filtered_sum * self.envelope_value).tanh()
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -367,8 +339,8 @@ impl AudioGenerator for ClapDrum {
 
 impl AudioNode for ClapDrum {
     fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (clap_left, clap_right) = self.next_sample_stereo();
-        (left_in + clap_left * self.gain, right_in + clap_right * self.gain)
+        let clap_sample = self.next_sample() * self.gain;
+        (left_in + clap_sample, right_in + clap_sample)
     }
 
     fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
@@ -381,7 +353,7 @@ impl AudioNode for ClapDrum {
                 self.set_gain(gain);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for ClapDrum: {:?}", event))
+            _ => Err(format!("Unsupported event for ClapDrum: {:?}", event)),
         }
     }
 
