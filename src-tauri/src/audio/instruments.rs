@@ -100,7 +100,7 @@ impl AudioGenerator for KickDrum {
 }
 
 impl AudioNode for KickDrum {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let drum_sample = self.next_sample() * self.gain;
         (left_in + drum_sample, right_in + drum_sample)
     }
@@ -338,7 +338,7 @@ impl AudioGenerator for ClapDrum {
 }
 
 impl AudioNode for ClapDrum {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let clap_sample = self.next_sample() * self.gain;
         (left_in + clap_sample, right_in + clap_sample)
     }

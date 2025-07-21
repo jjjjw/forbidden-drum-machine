@@ -88,7 +88,7 @@ impl DiffusionStage4 {
         // Delay all channels
         let mut delayed = [0.0f32; 4];
         for i in 0..4 {
-            delayed[i] = self.delay_lines[i].process(input[i]);
+            delayed[i] = AudioProcessor::process(&mut self.delay_lines[i], input[i]);
         }
 
         // Apply Hadamard transform
@@ -296,7 +296,7 @@ impl DiffusionStage8 {
         // Delay all channels
         let mut delayed = [0.0f32; 8];
         for i in 0..8 {
-            delayed[i] = self.delay_lines[i].process(input[i]);
+            delayed[i] = AudioProcessor::process(&mut self.delay_lines[i], input[i]);
         }
 
         // Apply Hadamard transform
@@ -469,7 +469,7 @@ impl FDNReverb {
 }
 
 impl StereoAudioProcessor for FDNReverb {
-    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
         // Scale input and distribute to 8-channel array
         let mut reflections = [0.0f32; 8];
         reflections[0] = left * 0.5;
@@ -500,8 +500,8 @@ impl StereoAudioProcessor for FDNReverb {
 }
 
 impl AudioNode for FDNReverb {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
         (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
     }
 
@@ -594,14 +594,14 @@ mod tests {
         reverb.set_modulation_depth(1.0); // Full modulation
 
         // Process impulse and capture modulated reverb tail
-        let _impulse = AudioNode::process_stereo(&mut reverb, 1.0, 0.5);
+        let _impulse = AudioNode::process(&mut reverb, 1.0, 0.5);
 
         let mut outputs_l = Vec::new();
         let mut outputs_r = Vec::new();
 
         // Process samples to hear modulated reverb tail
         for _ in 0..(0.5 * sample_rate) as usize {
-            let (out_l, out_r) = AudioNode::process_stereo(&mut reverb, 0.0, 0.0);
+            let (out_l, out_r) = AudioNode::process(&mut reverb, 0.0, 0.0);
             outputs_l.push(out_l);
             outputs_r.push(out_r);
         }
@@ -801,7 +801,7 @@ impl ReverbLite {
 }
 
 impl StereoAudioProcessor for ReverbLite {
-    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
         // Scale input and distribute to 4-channel array
         let mut reflections = [0.0f32; 4];
         reflections[0] = left * 0.5;
@@ -832,8 +832,8 @@ impl StereoAudioProcessor for ReverbLite {
 }
 
 impl AudioNode for ReverbLite {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
         (left_in + reverb_left, right_in + reverb_right)
     }
     
@@ -956,7 +956,7 @@ impl DownsampledReverb {
 }
 
 impl StereoAudioProcessor for DownsampledReverb {
-    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
         // Apply high-pass filter first (300Hz)
         let hp_left = self.hp_filter_left.process(left);
         let hp_right = self.hp_filter_right.process(right);
@@ -972,7 +972,7 @@ impl StereoAudioProcessor for DownsampledReverb {
         // Process reverb only on every other sample (2:1 downsampling)
         if self.sample_counter {
             let (reverb_left, reverb_right) =
-                StereoAudioProcessor::process_stereo(&mut self.reverb, filtered_left, filtered_right);
+                StereoAudioProcessor::process(&mut self.reverb, filtered_left, filtered_right);
             self.output_hold_left = reverb_left;
             self.output_hold_right = reverb_right;
         }
@@ -991,8 +991,8 @@ impl StereoAudioProcessor for DownsampledReverb {
 }
 
 impl AudioNode for DownsampledReverb {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
         (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
     }
 
@@ -1115,7 +1115,7 @@ impl DownsampledReverbLite {
 }
 
 impl StereoAudioProcessor for DownsampledReverbLite {
-    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
         // Apply high-pass filter first (300Hz)
         let hp_left = self.hp_filter_left.process(left);
         let hp_right = self.hp_filter_right.process(right);
@@ -1131,7 +1131,7 @@ impl StereoAudioProcessor for DownsampledReverbLite {
         // Process reverb only on every other sample (2:1 downsampling)
         if self.sample_counter {
             let (reverb_left, reverb_right) =
-                StereoAudioProcessor::process_stereo(&mut self.reverb, filtered_left, filtered_right);
+                StereoAudioProcessor::process(&mut self.reverb, filtered_left, filtered_right);
             self.output_hold_left = reverb_left;
             self.output_hold_right = reverb_right;
         }
@@ -1150,8 +1150,8 @@ impl StereoAudioProcessor for DownsampledReverbLite {
 }
 
 impl AudioNode for DownsampledReverbLite {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process_stereo(self, left_in, right_in);
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
         (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
     }
 

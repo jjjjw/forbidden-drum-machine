@@ -24,7 +24,7 @@ pub trait AudioProcessor {
 }
 
 pub trait StereoAudioProcessor {
-    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32);
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32);
     fn set_sample_rate(&mut self, sample_rate: f32);
 }
 
@@ -32,7 +32,7 @@ pub trait StereoAudioProcessor {
 /// All instruments and effects should implement this trait
 pub trait AudioNode {
     /// Process a single stereo sample (left_in, right_in) -> (left_out, right_out)
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32);
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32);
 
     /// Handle a typed event
     fn handle_event(&mut self, event: crate::events::NodeEvent) -> Result<(), String>;
@@ -44,8 +44,8 @@ pub trait AudioNode {
 /// AudioSystem trait for managing audio nodes and sequences
 /// Systems are configurations of audio nodes (instruments + effects) and sequencers
 pub trait AudioSystem: Send {
-    /// Process a buffer of interleaved stereo samples
-    fn generate(&mut self, data: &mut [f32]);
+    /// Process a single stereo sample and return (left, right)
+    fn next_sample(&mut self) -> (f32, f32);
 
     /// Handle an event for a specific audio node (including system events when node_name is System)
     fn handle_node_event(

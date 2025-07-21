@@ -75,9 +75,9 @@ impl AudioProcessor for DelayLine {
 }
 
 impl AudioNode for DelayLine {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let mono_in = (left_in + right_in) * 0.5;
-        let delayed = self.process(mono_in) * self.gain;
+        let delayed = AudioProcessor::process(self, mono_in) * self.gain;
         (left_in + delayed, right_in + delayed)
     }
 
@@ -185,9 +185,9 @@ impl AudioProcessor for FilteredDelayLine {
 }
 
 impl AudioNode for FilteredDelayLine {
-    fn process_stereo(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
+    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let mono_in = (left_in + right_in) * 0.5;
-        let delayed = self.process(mono_in) * self.gain;
+        let delayed = AudioProcessor::process(self, mono_in) * self.gain;
         (left_in + delayed, right_in + delayed)
     }
 
@@ -238,21 +238,21 @@ mod tests {
         delay.set_feedback(0.0);
 
         // Test silence with no input
-        assert_eq!(delay.process(0.0), 0.0);
+        assert_eq!(AudioProcessor::process(&mut delay, 0.0), 0.0);
 
         // Test impulse response
-        let impulse_out = delay.process(1.0);
+        let impulse_out = AudioProcessor::process(&mut delay, 1.0);
         assert_eq!(impulse_out, 0.0); // First sample should be 0 (no delay yet)
 
         // Process some samples to fill delay
         for _ in 0..98 {
-            delay.process(0.0);
+            AudioProcessor::process(&mut delay, 0.0);
         }
 
         // Check for impulse in the next few samples (filters may cause slight delay)
         let mut max_output = 0.0f32;
         for _ in 0..10 {
-            let output = delay.process(0.0);
+            let output = AudioProcessor::process(&mut delay, 0.0);
             max_output = max_output.max(output.abs());
         }
 
@@ -279,7 +279,7 @@ mod tests {
         delay.set_feedback(feedback);
 
         // Send an impulse
-        let impulse_output = delay.process(1.0);
+        let impulse_output = AudioProcessor::process(&mut delay, 1.0);
         assert_eq!(impulse_output, 0.0); // No immediate output
 
         let mut max_amplitude = 0.0f32;
@@ -287,7 +287,7 @@ mod tests {
 
         // Process for many samples to test unity feedback behavior
         for i in 0..500 {
-            let output = delay.process(0.0);
+            let output = AudioProcessor::process(&mut delay, 0.0);
             outputs.push(output);
             max_amplitude = max_amplitude.max(output.abs());
 

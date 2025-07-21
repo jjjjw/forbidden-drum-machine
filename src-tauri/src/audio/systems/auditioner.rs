@@ -34,24 +34,15 @@ impl AudioSystem for AuditionerSystem {
         }
     }
 
-    fn generate(&mut self, data: &mut [f32]) {
-        // Process each stereo frame
-        for frame in data.chunks_mut(2) {
-            // Start with silence - no input signal for auditioner
-            let (mut left, mut right) = (0.0, 0.0);
-            
-            // Add kick drum output
-            let (kick_left, kick_right) = self.kick.process_stereo(left, right);
-            left = kick_left;
-            right = kick_right;
-            
-            // Add clap drum output
-            let (clap_left, clap_right) = self.clap.process_stereo(left, right);
-            
-            // Write final output to buffer
-            frame[0] = clap_left;
-            frame[1] = clap_right;
-        }
+    fn next_sample(&mut self) -> (f32, f32) {
+        // Start with silence (no input signal)
+        let mut signal = (0.0, 0.0);
+
+        // Add instruments
+        signal = self.kick.process(signal.0, signal.1);
+        signal = self.clap.process(signal.0, signal.1);
+
+        signal
     }
 
     fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String> {

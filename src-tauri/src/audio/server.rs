@@ -44,20 +44,17 @@ impl AudioServer {
         self.current_system.as_deref()
     }
 
-    /// Process audio into interleaved stereo buffer
-    pub fn generate(&mut self, data: &mut [f32]) {
+    /// Process a single stereo sample
+    pub fn next_sample(&mut self) -> (f32, f32) {
         // Process current system if one is selected
         if let Some(current_name) = &self.current_system {
             if let Some(current_system) = self.systems.get_mut(current_name) {
-                // Let the system generate audio directly into the buffer
-                current_system.generate(data);
+                current_system.next_sample()
             } else {
-                // No system found, output silence
-                data.fill(0.0);
+                (0.0, 0.0)
             }
         } else {
-            // No active system, output silence
-            data.fill(0.0);
+            (0.0, 0.0)
         }
     }
 

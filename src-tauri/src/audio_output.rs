@@ -71,7 +71,6 @@ impl AudioOutput {
             config,
             {
                 let mut audio_server = audio_server;
-                let mut float_buffer = Vec::new();
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     // Process pending commands at the start of the buffer
                     command_receiver.process_commands(|command| match command {
@@ -107,22 +106,26 @@ impl AudioOutput {
                         }
                     });
 
-                    // Ensure float buffer is the right size
-                    if float_buffer.len() != data.len() {
-                        float_buffer.resize(data.len(), 0.0);
-                    }
-                    
-                    // Generate audio into the float buffer
-                    audio_server.generate(&mut float_buffer);
-                    
-                    // Convert from f32 to output format T with limiting and NaN protection
-                    for (output, &input) in data.iter_mut().zip(float_buffer.iter()) {
-                        let limited = if input.is_finite() {
-                            input.clamp(-0.95, 0.95)
+                    // Process audio sample-by-sample (stereo only)
+                    for frame in data.chunks_mut(2) {
+                        // Process stereo sample
+                        let (left, right) = audio_server.next_sample();
+                        
+                        // Apply limiting and NaN protection
+                        let left_limited = if left.is_finite() {
+                            left.clamp(-0.95, 0.95)
                         } else {
                             0.0
                         };
-                        *output = T::from_sample(limited);
+                        let right_limited = if right.is_finite() {
+                            right.clamp(-0.95, 0.95)
+                        } else {
+                            0.0
+                        };
+                        
+                        // Write stereo output
+                        frame[0] = T::from_sample(left_limited);
+                        frame[1] = T::from_sample(right_limited);
                     }
                 }
             },

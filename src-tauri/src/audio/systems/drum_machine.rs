@@ -47,7 +47,6 @@ pub struct DrumMachineSystem {
 
     // Pause state
     is_paused: bool,
-    
 }
 
 impl DrumMachineSystem {
@@ -232,91 +231,90 @@ impl AudioSystem for DrumMachineSystem {
     }
 
 
-    fn generate(&mut self, data: &mut [f32]) {
-        // Process each stereo frame
-        for frame in data.chunks_mut(2) {
-            // Only run sequencer when not paused
-            if !self.is_paused {
-                self.clock.tick();
+    fn next_sample(&mut self) -> (f32, f32) {
+        // Only run sequencer when not paused
+        if !self.is_paused {
+            self.clock.tick();
 
-                // Handle kick drum with biased clock and step sequencing
-                if let Some(step) = self.kick_loop.tick(&self.clock) {
-                    // Check if this is a new step and emit event
-                    if self.prev_kick_step.map_or(true, |prev| prev != step) {
-                        self.prev_kick_step = Some(step);
-                        self.send_event(ServerEvent::KickStepChanged(step));
-                        self.emit_modulator_values();
-                    }
-
-                    if self.kick_pattern[step as usize] {
-                        self.kick
-                            .handle_event(crate::events::NodeEvent::Trigger)
-                            .ok();
-                    }
+            // Handle kick drum with biased clock and step sequencing
+            if let Some(step) = self.kick_loop.tick(&self.clock) {
+                // Check if this is a new step and emit event
+                if self.prev_kick_step.map_or(true, |prev| prev != step) {
+                    self.prev_kick_step = Some(step);
+                    self.send_event(ServerEvent::KickStepChanged(step));
+                    self.emit_modulator_values();
                 }
 
-                // Handle clap drum with biased clock and step sequencing
-                if let Some(step) = self.clap_loop.tick(&self.clock) {
-                    // Check if this is a new step and emit event
-                    if self.prev_clap_step.map_or(true, |prev| prev != step) {
-                        self.prev_clap_step = Some(step);
-                        self.send_event(ServerEvent::ClapStepChanged(step));
-                    }
-
-                    if self.clap_pattern[step as usize] {
-                        self.clap
-                            .handle_event(crate::events::NodeEvent::Trigger)
-                            .ok();
-                    }
+                if self.kick_pattern[step as usize] {
+                    self.kick
+                        .handle_event(crate::events::NodeEvent::Trigger)
+                        .ok();
                 }
             }
 
-            // Update modulators
-            let modulated_delay_time = self.delay_time_mod.next_sample();
-            let modulated_reverb_size = self.reverb_size_mod.next_sample();
-            let modulated_reverb_decay = self.reverb_decay_mod.next_sample();
+            // Handle clap drum with biased clock and step sequencing
+            if let Some(step) = self.clap_loop.tick(&self.clock) {
+                // Check if this is a new step and emit event
+                if self.prev_clap_step.map_or(true, |prev| prev != step) {
+                    self.prev_clap_step = Some(step);
+                    self.send_event(ServerEvent::ClapStepChanged(step));
+                }
 
-            // Apply modulated parameters
-            self.reverb
-                .handle_event(crate::events::NodeEvent::SetSize(modulated_reverb_size))
-                .ok();
-            self.reverb
-                .handle_event(crate::events::NodeEvent::SetFeedback(
-                    modulated_reverb_decay,
-                ))
-                .ok();
-            self.delay
-                .handle_event(crate::events::NodeEvent::SetDelaySeconds(
-                    modulated_delay_time,
-                ))
-                .ok();
-            self.delay
-                .handle_event(crate::events::NodeEvent::SetFeedback(0.9))
-                .ok();
-
-            // Process through audio node chain
-            // Start with silence (no input signal)
-            let mut signal = (0.0, 0.0);
-
-            // Add instruments
-            signal = self.kick.process_stereo(signal.0, signal.1);
-            signal = self.clap.process_stereo(signal.0, signal.1);
-
-            // Apply sends and process through effects
-            let delay_input = (signal.0 * self.delay_send, signal.1 * self.delay_send);
-            let reverb_input = (signal.0 * self.reverb_send, signal.1 * self.reverb_send);
-
-            // Process effects
-            let delay_output = self.delay.process_stereo(delay_input.0, delay_input.1);
-            let reverb_output = self.reverb.process_stereo(reverb_input.0, reverb_input.1);
-
-            // Mix dry and wet signals with proper level management
-            let dry_level = 0.6; // Leave headroom for effects
-            let wet_level = 0.4; // Effects contribution
-
-            frame[0] = signal.0 * dry_level + (delay_output.0 + reverb_output.0) * wet_level;
-            frame[1] = signal.1 * dry_level + (delay_output.1 + reverb_output.1) * wet_level;
+                if self.clap_pattern[step as usize] {
+                    self.clap
+                        .handle_event(crate::events::NodeEvent::Trigger)
+                        .ok();
+                }
+            }
         }
+
+        // Update modulators
+        let modulated_delay_time = self.delay_time_mod.next_sample();
+        let modulated_reverb_size = self.reverb_size_mod.next_sample();
+        let modulated_reverb_decay = self.reverb_decay_mod.next_sample();
+
+        // Apply modulated parameters
+        self.reverb
+            .handle_event(crate::events::NodeEvent::SetSize(modulated_reverb_size))
+            .ok();
+        self.reverb
+            .handle_event(crate::events::NodeEvent::SetFeedback(
+                modulated_reverb_decay,
+            ))
+            .ok();
+        self.delay
+            .handle_event(crate::events::NodeEvent::SetDelaySeconds(
+                modulated_delay_time,
+            ))
+            .ok();
+        self.delay
+            .handle_event(crate::events::NodeEvent::SetFeedback(0.9))
+            .ok();
+
+        // Process through audio node chain
+        // Start with silence (no input signal)
+        let mut signal = (0.0, 0.0);
+
+        // Add instruments
+        signal = self.kick.process(signal.0, signal.1);
+        signal = self.clap.process(signal.0, signal.1);
+
+        // Apply sends and process through effects
+        let delay_input = (signal.0 * self.delay_send, signal.1 * self.delay_send);
+        let reverb_input = (signal.0 * self.reverb_send, signal.1 * self.reverb_send);
+
+        // Process effects
+        let delay_output = self.delay.process(delay_input.0, delay_input.1);
+        let reverb_output = self.reverb.process(reverb_input.0, reverb_input.1);
+
+        // Mix dry and wet signals with proper level management
+        let dry_level = 0.6; // Leave headroom for effects
+        let wet_level = 0.4; // Effects contribution
+
+        (
+            signal.0 * dry_level + (delay_output.0 + reverb_output.0) * wet_level,
+            signal.1 * dry_level + (delay_output.1 + reverb_output.1) * wet_level,
+        )
     }
     
 
