@@ -38,6 +38,8 @@ pub enum NodeEvent {
     GenerateClapPattern,
     SetDelaySend(f32),
     SetReverbSend(f32),
+    SetDelayReturn(f32),
+    SetReverbReturn(f32),
 }
 
 impl NodeEvent {
@@ -69,6 +71,8 @@ impl NodeEvent {
             "generate_clap_pattern" => Ok(NodeEvent::GenerateClapPattern),
             "set_delay_send" => Ok(NodeEvent::SetDelaySend(parameter)),
             "set_reverb_send" => Ok(NodeEvent::SetReverbSend(parameter)),
+            "set_delay_return" => Ok(NodeEvent::SetDelayReturn(parameter)),
+            "set_reverb_return" => Ok(NodeEvent::SetReverbReturn(parameter)),
             _ => Err(format!("Unknown node event: {}", event_name))
         }
     }

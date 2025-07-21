@@ -6,7 +6,7 @@ import { AuditionerPage } from "./components/AuditionerPage";
 import "./App.css";
 
 function App() {
-  const [audioStarted, setAudioStarted] = useState(true); // Audio is always started now
+  const [audioStarted] = useState(true); // Audio is always started now
   const [audioPaused, setAudioPaused] = useState(true); // Starts paused
   const [bpm, setBpm] = useState(120);
   const [kickPattern, setKickPattern] = useState([
@@ -37,6 +37,8 @@ function App() {
   });
   const [delaySend, setDelaySend] = useState(0.2);
   const [reverbSend, setReverbSend] = useState(0.3);
+  const [delayReturn, setDelayReturn] = useState(0.8);
+  const [reverbReturn, setReverbReturn] = useState(0.6);
   const [delayFreeze, setDelayFreeze] = useState(false);
   const [kickAttack, setKickAttack] = useState(0.005);
   const [kickRelease, setKickRelease] = useState(0.2);
@@ -229,6 +231,34 @@ function App() {
       });
     } catch (error) {
       setStatus(`Error setting reverb send: ${error}`);
+    }
+  }
+
+  async function updateDelayReturn(value: number) {
+    setDelayReturn(value);
+    try {
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system",
+        eventName: "set_delay_return",
+        parameter: value,
+      });
+    } catch (error) {
+      setStatus(`Error setting delay return: ${error}`);
+    }
+  }
+
+  async function updateReverbReturn(value: number) {
+    setReverbReturn(value);
+    try {
+      await invoke("send_audio_event", {
+        systemName: "drum_machine",
+        nodeName: "system",
+        eventName: "set_reverb_return",
+        parameter: value,
+      });
+    } catch (error) {
+      setStatus(`Error setting reverb return: ${error}`);
     }
   }
 
@@ -719,6 +749,22 @@ function App() {
                   </div>
                   <div>
                     <label className="block text-sm font-bold mb-2">
+                      Return: {(delayReturn * 100).toFixed(0)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={delayReturn}
+                      onChange={(e) =>
+                        updateDelayReturn(parseFloat(e.target.value))
+                      }
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">
                       Time: {(modulatorValues.delayTime * 1000).toFixed(0)}ms
                       (modulated)
                     </label>
@@ -762,6 +808,22 @@ function App() {
                       value={reverbSend}
                       onChange={(e) =>
                         updateReverbSend(parseFloat(e.target.value))
+                      }
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">
+                      Return: {(reverbReturn * 100).toFixed(0)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={reverbReturn}
+                      onChange={(e) =>
+                        updateReverbReturn(parseFloat(e.target.value))
                       }
                       className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                     />

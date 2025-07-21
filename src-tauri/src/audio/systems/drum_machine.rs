@@ -35,9 +35,11 @@ pub struct DrumMachineSystem {
     prev_kick_step: Option<u8>,
     prev_clap_step: Option<u8>,
 
-    // Effects sends
+    // Effects sends and returns
     delay_send: f32,
     reverb_send: f32,
+    delay_return: f32,
+    reverb_return: f32,
 
     // Sample and hold modulators
     delay_time_mod: SampleAndHold,
@@ -82,9 +84,11 @@ impl DrumMachineSystem {
             prev_kick_step: None,
             prev_clap_step: None,
 
-            // Default send levels
+            // Default send and return levels
             delay_send: 0.2,
             reverb_send: 0.3,
+            delay_return: 0.8,
+            reverb_return: 0.6,
 
             sample_rate,
 
@@ -156,6 +160,14 @@ impl DrumMachineSystem {
     pub fn set_reverb_send(&mut self, send: f32) {
         self.reverb_send = send.clamp(0.0, 1.0);
     }
+    
+    pub fn set_delay_return(&mut self, return_level: f32) {
+        self.delay_return = return_level.clamp(0.0, 1.0);
+    }
+    
+    pub fn set_reverb_return(&mut self, return_level: f32) {
+        self.reverb_return = return_level.clamp(0.0, 1.0);
+    }
 
     fn send_event(&self, event: ServerEvent) {
         self.event_sender.send(event);
@@ -222,6 +234,14 @@ impl AudioSystem for DrumMachineSystem {
                     }
                     NodeEvent::SetReverbSend(send) => {
                         self.set_reverb_send(send);
+                        Ok(())
+                    }
+                    NodeEvent::SetDelayReturn(return_level) => {
+                        self.set_delay_return(return_level);
+                        Ok(())
+                    }
+                    NodeEvent::SetReverbReturn(return_level) => {
+                        self.set_reverb_return(return_level);
                         Ok(())
                     }
                     _ => Err(format!("Unsupported system event: {:?}", event))
@@ -295,25 +315,28 @@ impl AudioSystem for DrumMachineSystem {
         // Start with silence (no input signal)
         let mut signal = (0.0, 0.0);
 
-        // Add instruments
+        // Add instruments (dry signal)
         signal = self.kick.process(signal.0, signal.1);
         signal = self.clap.process(signal.0, signal.1);
 
-        // Apply sends and process through effects
+        // Send to delay first
         let delay_input = (signal.0 * self.delay_send, signal.1 * self.delay_send);
-        let reverb_input = (signal.0 * self.reverb_send, signal.1 * self.reverb_send);
-
-        // Process effects
         let delay_output = self.delay.process(delay_input.0, delay_input.1);
+        
+        // Create post-delay signal (dry + delay return)
+        let post_delay_signal = (
+            signal.0 + delay_output.0 * self.delay_return,
+            signal.1 + delay_output.1 * self.delay_return,
+        );
+
+        // Send post-delay signal (dry + delay) to reverb
+        let reverb_input = (post_delay_signal.0 * self.reverb_send, post_delay_signal.1 * self.reverb_send);
         let reverb_output = self.reverb.process(reverb_input.0, reverb_input.1);
 
-        // Mix dry and wet signals with proper level management
-        let dry_level = 0.6; // Leave headroom for effects
-        let wet_level = 0.4; // Effects contribution
-
+        // Final mix: post-delay signal + reverb return
         (
-            signal.0 * dry_level + (delay_output.0 + reverb_output.0) * wet_level,
-            signal.1 * dry_level + (delay_output.1 + reverb_output.1) * wet_level,
+            post_delay_signal.0 + reverb_output.0 * self.reverb_return,
+            post_delay_signal.1 + reverb_output.1 * self.reverb_return,
         )
     }
     
