@@ -1,5 +1,5 @@
 use crate::audio::server::AudioServer;
-use crate::audio::systems::{DrumMachineSystem, AuditionerSystem};
+use crate::audio::systems::{AuditionerSystem, DrumMachineSystem};
 use crate::commands::{AudioCommand, AudioCommandReceiver};
 use crate::events::ServerEventSender;
 use cpal::{traits::*, Sample};
@@ -25,37 +25,28 @@ impl AudioOutput {
 
         // Create audio server with both systems
         let mut audio_server = AudioServer::new(sample_rate);
-        
+
         // Create and add drum machine system
         let drum_machine_system = DrumMachineSystem::new(sample_rate, event_sender.clone());
         audio_server.add_system("drum_machine".to_string(), Box::new(drum_machine_system));
-        
+
         // Create and add auditioner system
         let auditioner_system = AuditionerSystem::new(sample_rate);
         audio_server.add_system("auditioner".to_string(), Box::new(auditioner_system));
-        
+
         // Start with drum machine as default
         audio_server.switch_to_system("drum_machine").unwrap();
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => Self::run::<f32>(
-                &device,
-                &config.into(),
-                audio_server,
-                command_receiver,
-            )?,
-            cpal::SampleFormat::I16 => Self::run::<i16>(
-                &device,
-                &config.into(),
-                audio_server,
-                command_receiver,
-            )?,
-            cpal::SampleFormat::U16 => Self::run::<u16>(
-                &device,
-                &config.into(),
-                audio_server,
-                command_receiver,
-            )?,
+            cpal::SampleFormat::F32 => {
+                Self::run::<f32>(&device, &config.into(), audio_server, command_receiver)?
+            }
+            cpal::SampleFormat::I16 => {
+                Self::run::<i16>(&device, &config.into(), audio_server, command_receiver)?
+            }
+            cpal::SampleFormat::U16 => {
+                Self::run::<u16>(&device, &config.into(), audio_server, command_receiver)?
+            }
             _ => return Err("Unsupported sample format".into()),
         };
 
@@ -74,68 +65,64 @@ impl AudioOutput {
         T: Sample + cpal::SizedSample + cpal::FromSample<f32>,
     {
         let channels = config.channels as usize;
+        assert!(channels == 2, "Must be stereo");
 
         let stream = device.build_output_stream(
             config,
             {
                 let mut audio_server = audio_server;
+                let mut float_buffer = Vec::new();
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     // Process pending commands at the start of the buffer
-                    command_receiver.process_commands(|command| {
-                        match command {
-                            AudioCommand::SendNodeEvent {
-                                system_name,
-                                node_name,
-                                event_name,
+                    command_receiver.process_commands(|command| match command {
+                        AudioCommand::SendNodeEvent {
+                            system_name,
+                            node_name,
+                            event_name,
+                            parameter,
+                        } => {
+                            if let Err(e) = audio_server.send_node_event(
+                                &system_name,
+                                &node_name,
+                                &event_name,
                                 parameter,
-                            } => {
-                                if let Err(e) = audio_server.send_node_event(&system_name, &node_name, &event_name, parameter) {
-                                    eprintln!("Error sending node event: {}", e);
-                                }
+                            ) {
+                                eprintln!("Error sending node event: {}", e);
                             }
-                            AudioCommand::SwitchSystem(system_name) => {
-                                if let Err(e) = audio_server.switch_to_system(&system_name) {
-                                    eprintln!("Error switching system: {}", e);
-                                }
+                        }
+                        AudioCommand::SwitchSystem(system_name) => {
+                            if let Err(e) = audio_server.switch_to_system(&system_name) {
+                                eprintln!("Error switching system: {}", e);
                             }
-                            AudioCommand::SetSequence {
-                                system_name,
-                                sequence_data,
-                            } => {
-                                if let Err(e) = audio_server.send_set_sequence(&system_name, &sequence_data) {
-                                    eprintln!("Error setting sequence: {}", e);
-                                }
+                        }
+                        AudioCommand::SetSequence {
+                            system_name,
+                            sequence_data,
+                        } => {
+                            if let Err(e) =
+                                audio_server.send_set_sequence(&system_name, &sequence_data)
+                            {
+                                eprintln!("Error setting sequence: {}", e);
                             }
                         }
                     });
 
-                    // Process all frames
-                    for frame in data.chunks_mut(channels) {
-                        let (left, right) = audio_server.process_stereo(0.0, 0.0);
-
-                        // Limiting and NaN protection
-                        let left = if left.is_finite() {
-                            left.clamp(-0.95, 0.95)
+                    // Ensure float buffer is the right size
+                    if float_buffer.len() != data.len() {
+                        float_buffer.resize(data.len(), 0.0);
+                    }
+                    
+                    // Generate audio into the float buffer
+                    audio_server.generate(&mut float_buffer);
+                    
+                    // Convert from f32 to output format T with limiting and NaN protection
+                    for (output, &input) in data.iter_mut().zip(float_buffer.iter()) {
+                        let limited = if input.is_finite() {
+                            input.clamp(-0.95, 0.95)
                         } else {
                             0.0
                         };
-                        let right = if right.is_finite() {
-                            right.clamp(-0.95, 0.95)
-                        } else {
-                            0.0
-                        };
-
-                        if channels >= 2 {
-                            frame[0] = T::from_sample(left);
-                            frame[1] = T::from_sample(right);
-                        } else {
-                            frame[0] = T::from_sample((left + right) * 0.5);
-                        }
-
-                        // Zero out any additional channels
-                        for sample in frame.iter_mut().skip(2) {
-                            *sample = T::from_sample(0.0);
-                        }
+                        *output = T::from_sample(limited);
                     }
                 }
             },

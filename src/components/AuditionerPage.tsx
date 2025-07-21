@@ -97,16 +97,6 @@ const clapDrumConfig: InstrumentConfig = {
       defaultValue: 0.6,
       unit: "%",
     },
-    {
-      name: "Density",
-      node: "clap",
-      event: "set_density", 
-      min: 0,
-      max: 1,
-      step: 0.01,
-      defaultValue: 0.7,
-      unit: "%",
-    },
   ],
 };
 

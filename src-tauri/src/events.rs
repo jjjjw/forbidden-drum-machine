@@ -27,6 +27,17 @@ pub enum NodeEvent {
     SetSize(f32),
     SetDamping(f32),
     SetModulationDepth(f32),
+    
+    // System events (when node_name is "system")
+    SetBpm(f32),
+    SetPaused(bool),
+    SetMarkovDensity(f32),
+    SetKickLoopBias(f32),
+    SetClapLoopBias(f32),
+    GenerateKickPattern,
+    GenerateClapPattern,
+    SetDelaySend(f32),
+    SetReverbSend(f32),
 }
 
 impl NodeEvent {
@@ -48,41 +59,21 @@ impl NodeEvent {
             "set_size" => Ok(NodeEvent::SetSize(parameter)),
             "set_damping" => Ok(NodeEvent::SetDamping(parameter)),
             "set_modulation_depth" => Ok(NodeEvent::SetModulationDepth(parameter)),
+            // System events
+            "set_bpm" => Ok(NodeEvent::SetBpm(parameter)),
+            "set_paused" => Ok(NodeEvent::SetPaused(parameter != 0.0)),
+            "set_markov_density" => Ok(NodeEvent::SetMarkovDensity(parameter)),
+            "set_kick_loop_bias" => Ok(NodeEvent::SetKickLoopBias(parameter)),
+            "set_clap_loop_bias" => Ok(NodeEvent::SetClapLoopBias(parameter)),
+            "generate_kick_pattern" => Ok(NodeEvent::GenerateKickPattern),
+            "generate_clap_pattern" => Ok(NodeEvent::GenerateClapPattern),
+            "set_delay_send" => Ok(NodeEvent::SetDelaySend(parameter)),
+            "set_reverb_send" => Ok(NodeEvent::SetReverbSend(parameter)),
             _ => Err(format!("Unknown node event: {}", event_name))
         }
     }
 }
 
-// Audio system events for global system control
-#[derive(Debug, Clone)]
-pub enum SystemEvent {
-    SetBpm(f32),
-    SetPaused(bool),
-    SetMarkovDensity(f32),
-    SetKickLoopBias(f32),
-    SetClapLoopBias(f32),
-    GenerateKickPattern,
-    GenerateClapPattern,
-    SetDelaySend(f32),
-    SetReverbSend(f32),
-}
-
-impl SystemEvent {
-    pub fn from_string(event_name: &str, parameter: f32) -> Result<Self, String> {
-        match event_name {
-            "set_bpm" => Ok(SystemEvent::SetBpm(parameter)),
-            "set_paused" => Ok(SystemEvent::SetPaused(parameter != 0.0)),
-            "set_markov_density" => Ok(SystemEvent::SetMarkovDensity(parameter)),
-            "set_kick_loop_bias" => Ok(SystemEvent::SetKickLoopBias(parameter)),
-            "set_clap_loop_bias" => Ok(SystemEvent::SetClapLoopBias(parameter)),
-            "generate_kick_pattern" => Ok(SystemEvent::GenerateKickPattern),
-            "generate_clap_pattern" => Ok(SystemEvent::GenerateClapPattern),
-            "set_delay_send" => Ok(SystemEvent::SetDelaySend(parameter)),
-            "set_reverb_send" => Ok(SystemEvent::SetReverbSend(parameter)),
-            _ => Err(format!("Unknown system event: {}", event_name))
-        }
-    }
-}
 
 // Audio node names
 #[derive(Debug, Clone, PartialEq)]
@@ -91,6 +82,7 @@ pub enum NodeName {
     Clap,
     Delay,
     Reverb,
+    System,
 }
 
 impl NodeName {
@@ -100,6 +92,7 @@ impl NodeName {
             "clap" => Ok(NodeName::Clap),
             "delay" => Ok(NodeName::Delay),
             "reverb" => Ok(NodeName::Reverb),
+            "system" => Ok(NodeName::System),
             _ => Err(format!("Unknown node name: {}", name))
         }
     }

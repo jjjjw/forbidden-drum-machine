@@ -415,7 +415,7 @@ mod tests {
         let mut loop_instance = Loop::new(total_samples, total_steps);
 
         let mut all_steps = Vec::new();
-        let expected_sequence = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let _expected_sequence = vec![0, 1, 2, 3, 4, 5, 6, 7];
 
         // Run for 4 complete cycles
         for cycle in 0..4 {
@@ -507,7 +507,7 @@ mod tests {
         let mut loop_instance = BiasedLoop::new(total_samples, total_steps, bias);
 
         let mut all_steps = Vec::new();
-        let mut expected_sequence = vec![0, 1, 2, 3];
+        let _expected_sequence = vec![0, 1, 2, 3];
 
         // Run for 4 complete cycles
         for cycle in 0..4 {

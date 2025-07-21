@@ -1,15 +1,8 @@
-const WRITE_BATCH_SIZE: usize = 32;
-
 pub struct DelayBuffer {
     buffer: Vec<f32>,
     delay_samples: usize,
     write_pos: usize,
     mask: usize, // For fast modulo with power-of-2 sizes
-
-    // Batched write queue for performance
-    write_queue: [f32; WRITE_BATCH_SIZE],
-    queue_start_pos: usize,
-    queue_count: usize,
 }
 
 impl DelayBuffer {
@@ -23,15 +16,9 @@ impl DelayBuffer {
             write_pos: 0,
             delay_samples: 0,
             mask,
-            write_queue: [0.0; WRITE_BATCH_SIZE],
-            queue_start_pos: 0,
-            queue_count: 0,
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.buffer.len()
-    }
 
     pub fn set_delay_samples(&mut self, delay_samples: usize) {
         assert!(
@@ -76,78 +63,6 @@ impl DelayBuffer {
         self.advance();
     }
 
-    /// Process a sample through the delay (write + read in one operation)
-    pub fn process(&mut self, input: f32) -> f32 {
-        let output = self.read();
-        self.write(input);
-        output
-    }
-
-    /// Queue a write for batched processing
-    pub fn queue_write(&mut self, value: f32) {
-        if self.queue_count == 0 {
-            self.queue_start_pos = self.write_pos;
-        }
-
-        self.write_queue[self.queue_count] = value;
-        self.queue_count += 1;
-
-        // Auto-flush if queue is full
-        if self.queue_count == WRITE_BATCH_SIZE {
-            self.flush_writes();
-        }
-
-        self.advance();
-    }
-
-    /// Flush all queued writes to the buffer
-    pub fn flush_writes(&mut self) {
-        if self.queue_count == 0 {
-            return;
-        }
-
-        let start_pos = self.queue_start_pos;
-        let end_pos = start_pos + self.queue_count;
-
-        // Check if we can write the entire block without wrapping
-        if end_pos <= self.buffer.len() {
-            // Fast path: no wrapping needed
-            unsafe {
-                let dst = self.buffer.as_mut_ptr().add(start_pos);
-                let src = self.write_queue.as_ptr();
-                std::ptr::copy_nonoverlapping(src, dst, self.queue_count);
-            }
-        } else {
-            // Slow path: handle wrapping
-            let before_wrap = self.buffer.len() - start_pos;
-            let after_wrap = self.queue_count - before_wrap;
-
-            // Write the part before wrapping
-            unsafe {
-                let dst = self.buffer.as_mut_ptr().add(start_pos);
-                let src = self.write_queue.as_ptr();
-                std::ptr::copy_nonoverlapping(src, dst, before_wrap);
-            }
-
-            // Write the part after wrapping
-            if after_wrap > 0 {
-                unsafe {
-                    let dst = self.buffer.as_mut_ptr();
-                    let src = self.write_queue.as_ptr().add(before_wrap);
-                    std::ptr::copy_nonoverlapping(src, dst, after_wrap);
-                }
-            }
-        }
-
-        self.queue_count = 0;
-    }
-
-    /// Clear the buffer (useful for resetting state)
-    pub fn clear(&mut self) {
-        self.flush_writes(); // Ensure queued writes are committed
-        self.buffer.fill(0.0);
-        self.write_pos = 0;
-    }
 }
 
 #[cfg(test)]

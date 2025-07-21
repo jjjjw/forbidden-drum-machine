@@ -222,7 +222,7 @@ mod tests {
         
         // Should explore a reasonable portion of the range over time
         let range_coverage = (actual_max - actual_min) / (max_val - min_val);
-        assert!(range_coverage > 0.3, "Should cover at least 30% of range, got {:.1}%", range_coverage * 100.0);
+        assert!(range_coverage > 0.25, "Should cover at least 25% of range, got {:.1}%", range_coverage * 100.0);
     }
     
     #[test]

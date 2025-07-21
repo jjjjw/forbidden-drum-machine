@@ -46,7 +46,7 @@ impl DelayLine {
     }
 
     pub fn write(&mut self, input: f32, feedback: f32) {
-        self.buffer.queue_write(input + feedback * self.feedback);
+        self.buffer.write(input + feedback * self.feedback);
     }
 
     pub fn advance(&mut self) {
@@ -229,6 +229,7 @@ impl AudioNode for FilteredDelayLine {
 mod tests {
     use super::*;
 
+
     #[test]
     fn test_delay_line_basic_operation() {
         let sample_rate = 44100.0;
@@ -321,3 +322,4 @@ mod tests {
         assert!(has_late_signal, "Signal should persist with unity feedback");
     }
 }
+
