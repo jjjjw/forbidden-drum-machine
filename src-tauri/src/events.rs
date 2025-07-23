@@ -11,6 +11,7 @@ pub enum NodeEvent {
     // Instrument events
     SetBaseFrequency(f32),
     SetFrequencyRatio(f32),
+    SetModulationIndex(f32),
     SetAmpAttack(f32),
     SetAmpRelease(f32),
     SetFreqAttack(f32),
@@ -49,6 +50,7 @@ impl NodeEvent {
             "set_gain" => Ok(NodeEvent::SetGain(parameter)),
             "set_base_frequency" => Ok(NodeEvent::SetBaseFrequency(parameter)),
             "set_frequency_ratio" => Ok(NodeEvent::SetFrequencyRatio(parameter)),
+            "set_modulation_index" => Ok(NodeEvent::SetModulationIndex(parameter)),
             "set_amp_attack" => Ok(NodeEvent::SetAmpAttack(parameter)),
             "set_amp_release" => Ok(NodeEvent::SetAmpRelease(parameter)),
             "set_freq_attack" => Ok(NodeEvent::SetFreqAttack(parameter)),
@@ -84,6 +86,7 @@ impl NodeEvent {
 pub enum NodeName {
     Kick,
     Clap,
+    Chord,
     Delay,
     Reverb,
     System,
@@ -94,6 +97,7 @@ impl NodeName {
         match name {
             "kick" => Ok(NodeName::Kick),
             "clap" => Ok(NodeName::Clap),
+            "chord" => Ok(NodeName::Chord),
             "delay" => Ok(NodeName::Delay),
             "reverb" => Ok(NodeName::Reverb),
             "system" => Ok(NodeName::System),

@@ -111,3 +111,55 @@ impl AudioGenerator for NoiseGenerator {
         // NoiseGenerator doesn't depend on sample rate
     }
 }
+
+pub struct PMOscillator {
+    phase_gen: PhaseGenerator,
+    feedback: f32,
+    last_output: f32,
+}
+
+impl PMOscillator {
+    pub fn new(frequency: f32, sample_rate: f32) -> Self {
+        Self {
+            phase_gen: PhaseGenerator::new(frequency, sample_rate),
+            feedback: 0.0,
+            last_output: 0.0,
+        }
+    }
+
+    pub fn set_frequency(&mut self, frequency: f32) {
+        self.phase_gen.set_frequency(frequency);
+    }
+
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(0.0, 0.99);
+    }
+
+    pub fn reset(&mut self) {
+        self.phase_gen.reset();
+        self.last_output = 0.0;
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.phase_gen.set_sample_rate(sample_rate);
+    }
+
+    pub fn next_sample_with_pm(&mut self, phase_mod: f32) -> f32 {
+        let phase = self.phase_gen.next_sample();
+        let modulated_phase = (phase + phase_mod + self.last_output * self.feedback).fract();
+        let table_index = ((modulated_phase * SINE_TABLE_SIZE as f32) as usize) & SINE_TABLE_MASK;
+        let sample = SINE_TABLE[table_index];
+        self.last_output = sample;
+        sample
+    }
+}
+
+impl AudioGenerator for PMOscillator {
+    fn next_sample(&mut self) -> f32 {
+        self.next_sample_with_pm(0.0)
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.set_sample_rate(sample_rate);
+    }
+}

@@ -100,12 +100,76 @@ const clapDrumConfig: InstrumentConfig = {
   ],
 };
 
-interface AuditionerPageProps {
-  onBack: () => void;
-  isPaused: boolean;
-}
+// Chord synth configuration
+const chordSynthConfig: InstrumentConfig = {
+  name: "Chord Synth",
+  color: "purple",
+  triggerNode: "chord",
+  parameters: [
+    {
+      name: "Gain",
+      node: "chord",
+      event: "set_gain",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.25,
+      unit: "%",
+    },
+    {
+      name: "Base Frequency",
+      node: "chord",
+      event: "set_base_frequency",
+      min: 110,
+      max: 440,
+      step: 1,
+      defaultValue: 220,
+      unit: "hz",
+    },
+    {
+      name: "Modulation Index",
+      node: "chord",
+      event: "set_modulation_index",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "x",
+    },
+    {
+      name: "Feedback",
+      node: "chord",
+      event: "set_feedback",
+      min: 0,
+      max: 0.99,
+      step: 0.01,
+      defaultValue: 0.1,
+      unit: "%",
+    },
+    {
+      name: "Attack",
+      node: "chord",
+      event: "set_amp_attack",
+      min: 0.01,
+      max: 2,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "s",
+    },
+    {
+      name: "Release",
+      node: "chord",
+      event: "set_amp_release",
+      min: 0.1,
+      max: 8,
+      step: 0.1,
+      defaultValue: 4,
+      unit: "s",
+    },
+  ],
+};
 
-export function AuditionerPage({ onBack, isPaused }: AuditionerPageProps) {
+export function AuditionerPage(): JSX.Element {
   // Switch to auditioner system when this page loads
   useEffect(() => {
     const switchToAuditioner = async () => {
@@ -123,6 +187,7 @@ export function AuditionerPage({ onBack, isPaused }: AuditionerPageProps) {
     <div className="space-y-8">
       <Auditioner config={kickDrumConfig} />
       <Auditioner config={clapDrumConfig} />
+      <Auditioner config={chordSynthConfig} />
     </div>
   );
 }

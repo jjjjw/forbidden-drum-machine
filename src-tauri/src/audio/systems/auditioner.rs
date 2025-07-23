@@ -1,4 +1,4 @@
-use crate::audio::instruments::{ClapDrum, KickDrum};
+use crate::audio::instruments::{ChordSynth, ClapDrum, KickDrum};
 use crate::audio::{AudioNode, AudioSystem};
 
 /// Auditioner system for testing and tweaking instruments
@@ -7,6 +7,7 @@ pub struct AuditionerSystem {
     // Audio nodes for different instruments
     kick: KickDrum,
     clap: ClapDrum,
+    chord: ChordSynth,
     sample_rate: f32,
 }
 
@@ -15,6 +16,7 @@ impl AuditionerSystem {
         Self {
             kick: KickDrum::new(sample_rate),
             clap: ClapDrum::new(sample_rate),
+            chord: ChordSynth::new(sample_rate),
             sample_rate,
         }
     }
@@ -30,6 +32,7 @@ impl AudioSystem for AuditionerSystem {
         match node_name {
             NodeName::Kick => self.kick.handle_event(event),
             NodeName::Clap => self.clap.handle_event(event),
+            NodeName::Chord => self.chord.handle_event(event),
             _ => Err(format!("Unsupported node for Auditioner: {:?}", node_name)),
         }
     }
@@ -41,6 +44,7 @@ impl AudioSystem for AuditionerSystem {
         // Add instruments
         signal = self.kick.process(signal.0, signal.1);
         signal = self.clap.process(signal.0, signal.1);
+        signal = self.chord.process(signal.0, signal.1);
 
         signal
     }
@@ -58,5 +62,6 @@ impl AudioSystem for AuditionerSystem {
         self.sample_rate = sample_rate;
         self.kick.set_sample_rate(sample_rate);
         self.clap.set_sample_rate(sample_rate);
+        self.chord.set_sample_rate(sample_rate);
     }
 }

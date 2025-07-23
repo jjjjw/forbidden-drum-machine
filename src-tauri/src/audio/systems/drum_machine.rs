@@ -195,6 +195,7 @@ impl AudioSystem for DrumMachineSystem {
         match node_name {
             NodeName::Kick => self.kick.handle_event(event),
             NodeName::Clap => self.clap.handle_event(event),
+            NodeName::Chord => Err("Chord not supported in drum machine".to_string()),
             NodeName::Delay => self.delay.handle_event(event),
             NodeName::Reverb => self.reverb.handle_event(event),
             NodeName::System => {
