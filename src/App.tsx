@@ -432,8 +432,8 @@ function App() {
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8 font-mono">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-400 to-blue-600 bg-clip-text text-transparent mb-6">
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-neutral-300 mb-6">
             Forbidden Drum Machine
           </h1>
 
@@ -863,9 +863,7 @@ function App() {
         )}
 
         {/* Auditioner System */}
-        {currentSystem === "auditioner" && (
-          <AuditionerPage />
-        )}
+        {currentSystem === "auditioner" && <AuditionerPage />}
       </div>
     </main>
   );

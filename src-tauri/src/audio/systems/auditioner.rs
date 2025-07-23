@@ -1,5 +1,5 @@
 use crate::audio::instruments::{ChordSynth, ClapDrum, KickDrum};
-use crate::audio::reverbs::DownsampledReverbLite;
+use crate::audio::reverbs::ReverbLite;
 use crate::audio::{AudioNode, AudioSystem};
 
 /// Auditioner system for testing and tweaking instruments
@@ -9,12 +9,12 @@ pub struct AuditionerSystem {
     kick: KickDrum,
     clap: ClapDrum,
     chord: ChordSynth,
-    reverb: DownsampledReverbLite,
-    
+    reverb: ReverbLite,
+
     // Send/return levels for reverb
     reverb_send: f32,
     reverb_return: f32,
-    
+
     sample_rate: f32,
 }
 
@@ -24,17 +24,17 @@ impl AuditionerSystem {
             kick: KickDrum::new(sample_rate),
             clap: ClapDrum::new(sample_rate),
             chord: ChordSynth::new(sample_rate),
-            reverb: DownsampledReverbLite::new(sample_rate),
-            reverb_send: 0.3,    // Default 30% send to reverb
-            reverb_return: 0.5,  // Default 50% reverb return
+            reverb: ReverbLite::new(sample_rate),
+            reverb_send: 0.3,   // Default 30% send to reverb
+            reverb_return: 0.5, // Default 50% reverb return
             sample_rate,
         }
     }
-    
+
     pub fn set_reverb_send(&mut self, send: f32) {
         self.reverb_send = send.clamp(0.0, 1.0);
     }
-    
+
     pub fn set_reverb_return(&mut self, return_level: f32) {
         self.reverb_return = return_level.clamp(0.0, 1.0);
     }
@@ -64,7 +64,10 @@ impl AudioSystem for AuditionerSystem {
                         self.set_reverb_return(return_level);
                         Ok(())
                     }
-                    _ => Err(format!("Unsupported system event for Auditioner: {:?}", event)),
+                    _ => Err(format!(
+                        "Unsupported system event for Auditioner: {:?}",
+                        event
+                    )),
                 }
             }
             _ => Err(format!("Unsupported node for Auditioner: {:?}", node_name)),
