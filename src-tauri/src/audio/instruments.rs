@@ -9,7 +9,7 @@ pub struct KickDrum {
     amp_envelope: AREnvelope,
     freq_envelope: AREnvelope,
     base_frequency: f32,
-    frequency_mod_amount: f32,
+    frequency_ratio: f32,
     gain: f32,
 }
 
@@ -20,7 +20,7 @@ impl KickDrum {
             amp_envelope: AREnvelope::new(sample_rate),
             freq_envelope: AREnvelope::new(sample_rate),
             base_frequency: 60.0,
-            frequency_mod_amount: 40.0,
+            frequency_ratio: 7.0,
             gain: 1.0,
         };
 
@@ -47,8 +47,8 @@ impl KickDrum {
         self.base_frequency = freq;
     }
 
-    pub fn set_frequency_mod_amount(&mut self, amount: f32) {
-        self.frequency_mod_amount = amount;
+    pub fn set_frequency_ratio(&mut self, ratio: f32) {
+        self.frequency_ratio = ratio;
     }
 
     pub fn set_amp_attack(&mut self, time: f32) {
@@ -85,7 +85,9 @@ impl AudioGenerator for KickDrum {
         let amp_env = self.amp_envelope.next_sample();
         let freq_env = self.freq_envelope.next_sample();
 
-        let current_freq = self.base_frequency + (freq_env * self.frequency_mod_amount);
+        // Use frequency ratio for sharper sweep: starts at base_frequency * ratio, sweeps down to base_frequency
+        let start_freq = self.base_frequency * self.frequency_ratio;
+        let current_freq = self.base_frequency + (freq_env * (start_freq - self.base_frequency));
         self.oscillator.set_frequency(current_freq);
 
         let sample = self.oscillator.next_sample();
@@ -119,8 +121,8 @@ impl AudioNode for KickDrum {
                 self.set_base_frequency(freq);
                 Ok(())
             }
-            NodeEvent::SetFrequencyModAmount(amount) => {
-                self.set_frequency_mod_amount(amount);
+            NodeEvent::SetFrequencyRatio(ratio) => {
+                self.set_frequency_ratio(ratio);
                 Ok(())
             }
             NodeEvent::SetAmpAttack(time) => {

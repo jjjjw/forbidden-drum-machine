@@ -10,7 +10,7 @@ pub enum NodeEvent {
     
     // Instrument events
     SetBaseFrequency(f32),
-    SetFrequencyModAmount(f32),
+    SetFrequencyRatio(f32),
     SetAmpAttack(f32),
     SetAmpRelease(f32),
     SetFreqAttack(f32),
@@ -48,7 +48,7 @@ impl NodeEvent {
             "trigger" => Ok(NodeEvent::Trigger),
             "set_gain" => Ok(NodeEvent::SetGain(parameter)),
             "set_base_frequency" => Ok(NodeEvent::SetBaseFrequency(parameter)),
-            "set_frequency_mod_amount" => Ok(NodeEvent::SetFrequencyModAmount(parameter)),
+            "set_frequency_ratio" => Ok(NodeEvent::SetFrequencyRatio(parameter)),
             "set_amp_attack" => Ok(NodeEvent::SetAmpAttack(parameter)),
             "set_amp_release" => Ok(NodeEvent::SetAmpRelease(parameter)),
             "set_freq_attack" => Ok(NodeEvent::SetFreqAttack(parameter)),
