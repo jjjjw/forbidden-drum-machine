@@ -1,4 +1,5 @@
 use crate::audio::instruments::{ChordSynth, ClapDrum, KickDrum};
+use crate::audio::reverbs::DownsampledReverbLite;
 use crate::audio::{AudioNode, AudioSystem};
 
 /// Auditioner system for testing and tweaking instruments
@@ -8,6 +9,12 @@ pub struct AuditionerSystem {
     kick: KickDrum,
     clap: ClapDrum,
     chord: ChordSynth,
+    reverb: DownsampledReverbLite,
+    
+    // Send/return levels for reverb
+    reverb_send: f32,
+    reverb_return: f32,
+    
     sample_rate: f32,
 }
 
@@ -17,8 +24,19 @@ impl AuditionerSystem {
             kick: KickDrum::new(sample_rate),
             clap: ClapDrum::new(sample_rate),
             chord: ChordSynth::new(sample_rate),
+            reverb: DownsampledReverbLite::new(sample_rate),
+            reverb_send: 0.3,    // Default 30% send to reverb
+            reverb_return: 0.5,  // Default 50% reverb return
             sample_rate,
         }
+    }
+    
+    pub fn set_reverb_send(&mut self, send: f32) {
+        self.reverb_send = send.clamp(0.0, 1.0);
+    }
+    
+    pub fn set_reverb_return(&mut self, return_level: f32) {
+        self.reverb_return = return_level.clamp(0.0, 1.0);
     }
 }
 
@@ -33,6 +51,22 @@ impl AudioSystem for AuditionerSystem {
             NodeName::Kick => self.kick.handle_event(event),
             NodeName::Clap => self.clap.handle_event(event),
             NodeName::Chord => self.chord.handle_event(event),
+            NodeName::Reverb => self.reverb.handle_event(event),
+            NodeName::System => {
+                // Handle system events for reverb send/return
+                use crate::events::NodeEvent;
+                match event {
+                    NodeEvent::SetReverbSend(send) => {
+                        self.set_reverb_send(send);
+                        Ok(())
+                    }
+                    NodeEvent::SetReverbReturn(return_level) => {
+                        self.set_reverb_return(return_level);
+                        Ok(())
+                    }
+                    _ => Err(format!("Unsupported system event for Auditioner: {:?}", event)),
+                }
+            }
             _ => Err(format!("Unsupported node for Auditioner: {:?}", node_name)),
         }
     }
@@ -46,7 +80,15 @@ impl AudioSystem for AuditionerSystem {
         signal = self.clap.process(signal.0, signal.1);
         signal = self.chord.process(signal.0, signal.1);
 
-        signal
+        // Send to reverb and mix with dry signal
+        let reverb_input = (signal.0 * self.reverb_send, signal.1 * self.reverb_send);
+        let reverb_output = self.reverb.process(reverb_input.0, reverb_input.1);
+
+        // Final mix: dry signal + reverb return
+        (
+            signal.0 + reverb_output.0 * self.reverb_return,
+            signal.1 + reverb_output.1 * self.reverb_return,
+        )
     }
 
     fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String> {
@@ -63,5 +105,6 @@ impl AudioSystem for AuditionerSystem {
         self.kick.set_sample_rate(sample_rate);
         self.clap.set_sample_rate(sample_rate);
         self.chord.set_sample_rate(sample_rate);
+        self.reverb.set_sample_rate(sample_rate);
     }
 }

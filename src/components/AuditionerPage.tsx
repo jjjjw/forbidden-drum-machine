@@ -169,6 +169,55 @@ const chordSynthConfig: InstrumentConfig = {
   ],
 };
 
+// Reverb configuration  
+const reverbConfig: InstrumentConfig = {
+  name: "Reverb",
+  color: "teal", 
+  triggerNode: null, // No trigger for reverb
+  parameters: [
+    {
+      name: "Send",
+      node: "system",
+      event: "set_reverb_send",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.3,
+      unit: "%",
+    },
+    {
+      name: "Return",
+      node: "system", 
+      event: "set_reverb_return",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "%",
+    },
+    {
+      name: "Size",
+      node: "reverb",
+      event: "set_size",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "%",
+    },
+    {
+      name: "Feedback",
+      node: "reverb",
+      event: "set_feedback",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "%",
+    },
+  ],
+};
+
 export function AuditionerPage(): JSX.Element {
   // Switch to auditioner system when this page loads
   useEffect(() => {
@@ -188,6 +237,7 @@ export function AuditionerPage(): JSX.Element {
       <Auditioner config={kickDrumConfig} />
       <Auditioner config={clapDrumConfig} />
       <Auditioner config={chordSynthConfig} />
+      <Auditioner config={reverbConfig} />
     </div>
   );
 }

@@ -864,7 +864,7 @@ function App() {
 
         {/* Auditioner System */}
         {currentSystem === "auditioner" && (
-          <AuditionerPage onBack={() => {}} isPaused={audioPaused} />
+          <AuditionerPage />
         )}
       </div>
     </main>

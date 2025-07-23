@@ -16,7 +16,7 @@ export interface ParameterConfig {
 export interface InstrumentConfig {
   name: string;
   color: string;
-  triggerNode: string;  // e.g., "kick", "clap"
+  triggerNode: string | null;  // e.g., "kick", "clap", or null for no trigger
   parameters: ParameterConfig[];
 }
 
@@ -109,6 +109,11 @@ export function Auditioner({ config }: AuditionerProps) {
           title: 'text-yellow-400',
           button: 'bg-yellow-600 hover:bg-yellow-700'
         };
+      case 'teal':
+        return {
+          title: 'text-teal-400',
+          button: 'bg-teal-600 hover:bg-teal-700'
+        };
       default:
         return {
           title: 'text-gray-400',
@@ -125,12 +130,14 @@ export function Auditioner({ config }: AuditionerProps) {
         <h2 className={`text-2xl font-bold ${colorClasses.title}`}>
           {config.name}
         </h2>
-        <button
-          onClick={triggerInstrument}
-          className={`${colorClasses.button} text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg`}
-        >
-          ▶ Trigger
-        </button>
+        {config.triggerNode && (
+          <button
+            onClick={triggerInstrument}
+            className={`${colorClasses.button} text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg`}
+          >
+            ▶ Trigger
+          </button>
+        )}
       </div>
 
       <div className="space-y-6">
