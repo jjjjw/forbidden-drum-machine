@@ -3,8 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface ParameterConfig {
   name: string;
-  node: string;     // e.g., "kick", "clap", "delay", "reverb"
-  event: string;    // e.g., "set_gain", "set_attack", "set_frequency"
+  node: string; // e.g., "kick", "clap", "delay", "reverb"
+  event: string; // e.g., "set_gain", "set_attack", "set_frequency"
   min: number;
   max: number;
   step: number;
@@ -16,7 +16,7 @@ export interface ParameterConfig {
 export interface InstrumentConfig {
   name: string;
   color: string;
-  triggerNode: string | null;  // e.g., "kick", "clap", or null for no trigger
+  triggerNode: string | null; // e.g., "kick", "clap", or null for no trigger
   parameters: ParameterConfig[];
 }
 
@@ -27,7 +27,7 @@ interface AuditionerProps {
 export function Auditioner({ config }: AuditionerProps) {
   const [parameters, setParameters] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
-    config.parameters.forEach(param => {
+    config.parameters.forEach((param) => {
       initial[`${param.node}.${param.event}`] = param.defaultValue;
     });
     return initial;
@@ -35,14 +35,14 @@ export function Auditioner({ config }: AuditionerProps) {
 
   const updateParameter = async (param: ParameterConfig, value: number) => {
     const key = `${param.node}.${param.event}`;
-    setParameters(prev => ({ ...prev, [key]: value }));
-    
+    setParameters((prev) => ({ ...prev, [key]: value }));
+
     try {
       await invoke("send_audio_event", {
         systemName: "auditioner",
         nodeName: param.node,
         eventName: param.event,
-        parameter: value
+        parameter: value,
       });
     } catch (error) {
       console.error(`Error setting ${param.name}:`, error);
@@ -52,10 +52,10 @@ export function Auditioner({ config }: AuditionerProps) {
   const triggerInstrument = async () => {
     try {
       await invoke("send_audio_event", {
-        systemName: "auditioner", 
+        systemName: "auditioner",
         nodeName: config.triggerNode,
         eventName: "trigger",
-        parameter: 0.0
+        parameter: 0.0,
       });
     } catch (error) {
       console.error(`Error triggering ${config.name}:`, error);
@@ -66,58 +66,58 @@ export function Auditioner({ config }: AuditionerProps) {
     if (param.formatter) {
       return param.formatter(value);
     }
-    
-    if (param.unit === 'ms') {
+
+    if (param.unit === "ms") {
       return `${(value * 1000).toFixed(1)}ms`;
     }
-    
-    if (param.unit === 'hz') {
+
+    if (param.unit === "hz") {
       return `${value.toFixed(1)}Hz`;
     }
-    
-    if (param.unit === '%') {
+
+    if (param.unit === "%") {
       return `${(value * 100).toFixed(0)}%`;
     }
-    
+
     return value.toFixed(3);
   };
 
   const getColorClasses = (color: string) => {
     switch (color) {
-      case 'red':
+      case "red":
         return {
-          title: 'text-red-400',
-          button: 'bg-red-600 hover:bg-red-700'
+          title: "text-red-400",
+          button: "bg-red-600 hover:bg-red-700",
         };
-      case 'blue':
+      case "blue":
         return {
-          title: 'text-blue-400',
-          button: 'bg-blue-600 hover:bg-blue-700'
+          title: "text-blue-400",
+          button: "bg-blue-600 hover:bg-blue-700",
         };
-      case 'green':
+      case "green":
         return {
-          title: 'text-green-400',
-          button: 'bg-green-600 hover:bg-green-700'
+          title: "text-green-400",
+          button: "bg-green-600 hover:bg-green-700",
         };
-      case 'purple':
+      case "purple":
         return {
-          title: 'text-purple-400',
-          button: 'bg-purple-600 hover:bg-purple-700'
+          title: "text-purple-400",
+          button: "bg-purple-600 hover:bg-purple-700",
         };
-      case 'yellow':
+      case "yellow":
         return {
-          title: 'text-yellow-400',
-          button: 'bg-yellow-600 hover:bg-yellow-700'
+          title: "text-yellow-400",
+          button: "bg-yellow-600 hover:bg-yellow-700",
         };
-      case 'teal':
+      case "teal":
         return {
-          title: 'text-teal-400',
-          button: 'bg-teal-600 hover:bg-teal-700'
+          title: "text-teal-400",
+          button: "bg-teal-600 hover:bg-teal-700",
         };
       default:
         return {
-          title: 'text-gray-400',
-          button: 'bg-gray-600 hover:bg-gray-700'
+          title: "text-gray-400",
+          button: "bg-gray-600 hover:bg-gray-700",
         };
     }
   };
@@ -125,17 +125,15 @@ export function Auditioner({ config }: AuditionerProps) {
   const colorClasses = getColorClasses(config.color);
 
   return (
-    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-gray-800 rounded-md p-6 border border-gray-700">
       <div className="flex justify-between items-center mb-6">
-        <h2 className={`text-2xl font-bold ${colorClasses.title}`}>
-          {config.name}
-        </h2>
+        <h2 className={`text-lg ${colorClasses.title}`}>{config.name}</h2>
         {config.triggerNode && (
           <button
             onClick={triggerInstrument}
-            className={`${colorClasses.button} text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg`}
+            className={`${colorClasses.button} text-white py-2 px-4 rounded-md transition-all transform shadow-lg`}
           >
-            ▶ Trigger
+            Trigger
           </button>
         )}
       </div>
@@ -145,7 +143,7 @@ export function Auditioner({ config }: AuditionerProps) {
           const key = `${param.node}.${param.event}`;
           return (
             <div key={key}>
-              <label className="block text-sm font-bold mb-2">
+              <label className="block text-sm mb-2">
                 {param.name}: {formatValue(param, parameters[key])}
               </label>
               <input
@@ -154,8 +152,10 @@ export function Auditioner({ config }: AuditionerProps) {
                 max={param.max}
                 step={param.step}
                 value={parameters[key]}
-                onChange={(e) => updateParameter(param, parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                onChange={(e) =>
+                  updateParameter(param, parseFloat(e.target.value))
+                }
+                className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer slider"
               />
             </div>
           );

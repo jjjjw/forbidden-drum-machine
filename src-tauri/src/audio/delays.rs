@@ -1,7 +1,7 @@
 use crate::audio::buffers::DelayBuffer;
-use crate::events::NodeEvent;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
-use crate::audio::{AudioProcessor, AudioNode};
+use crate::audio::{AudioNode, AudioProcessor};
+use crate::events::NodeEvent;
 
 // Simple delay line without filtering
 pub struct DelayLine {
@@ -99,7 +99,7 @@ impl AudioNode for DelayLine {
                 self.set_freeze(freeze);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for DelayLine: {:?}", event))
+            _ => Err(format!("Unsupported event for DelayLine: {:?}", event)),
         }
     }
 
@@ -217,7 +217,10 @@ impl AudioNode for FilteredDelayLine {
                 self.set_lowpass_freq(freq);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for FilteredDelayLine: {:?}", event))
+            _ => Err(format!(
+                "Unsupported event for FilteredDelayLine: {:?}",
+                event
+            )),
         }
     }
 
@@ -228,7 +231,6 @@ impl AudioNode for FilteredDelayLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn test_delay_line_basic_operation() {
@@ -322,4 +324,3 @@ mod tests {
         assert!(has_late_signal, "Signal should persist with unity feedback");
     }
 }
-

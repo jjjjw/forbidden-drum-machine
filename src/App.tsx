@@ -368,8 +368,8 @@ function App() {
     try {
       await invoke("send_audio_event", {
         systemName: "drum_machine",
-        nodeName: "kick",
-        eventName: "set_loop_bias",
+        nodeName: "system",
+        eventName: "set_kick_loop_bias",
         parameter: value,
       });
     } catch (error) {
@@ -382,8 +382,8 @@ function App() {
     try {
       await invoke("send_audio_event", {
         systemName: "drum_machine",
-        nodeName: "clap",
-        eventName: "set_loop_bias",
+        nodeName: "system",
+        eventName: "set_clap_loop_bias",
         parameter: value,
       });
     } catch (error) {
@@ -433,7 +433,7 @@ function App() {
     <main className="min-h-screen bg-gray-900 text-white p-8 font-mono">
       <div className="max-w-6xl mx-auto">
         <div className="mb-4">
-          <h1 className="text-xl font-bold text-neutral-300 mb-6">
+          <h1 className="text-lg text-neutral-300 mb-6">
             Forbidden Drum Machine
           </h1>
 
@@ -441,7 +441,7 @@ function App() {
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => switchSystem("drum_machine")}
-              className={`px-6 py-3 rounded-lg font-bold transition-all ${
+              className={`px-4 py-2 rounded-md transition-all ${
                 currentSystem === "drum_machine"
                   ? "bg-blue-600 text-white"
                   : "bg-gray-700 text-gray-300 hover:bg-gray-600"
@@ -451,7 +451,7 @@ function App() {
             </button>
             <button
               onClick={() => switchSystem("auditioner")}
-              className={`px-6 py-3 rounded-lg font-bold transition-all ${
+              className={`px-4 py-2 rounded-md transition-all ${
                 currentSystem === "auditioner"
                   ? "bg-purple-600 text-white"
                   : "bg-gray-700 text-gray-300 hover:bg-gray-600"
@@ -467,14 +467,14 @@ function App() {
           <>
             {/* Audio Control & Status */}
             <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
-              <h2 className="text-2xl font-bold mb-4 text-green-400">
+              <h2 className="text-lg font-medium mb-4 text-green-400">
                 Playback Control
               </h2>
               <div className="flex gap-4 mb-4">
                 {!audioPaused && (
                   <button
                     onClick={stopAudio}
-                    className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105"
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white py-3 px-8 rounded-md transition-all transform hover:scale-105"
                   >
                     ⏸ Pause
                   </button>
@@ -482,7 +482,7 @@ function App() {
                 {audioPaused && (
                   <button
                     onClick={resumeAudio}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-all transform hover:scale-105"
+                    className="bg-blue-600 hover:bg-blue-700 text-white py-3 px-8 rounded-md transition-all transform hover:scale-105"
                   >
                     ▶ Play
                   </button>
@@ -508,9 +508,9 @@ function App() {
 
             {/* BPM Control */}
             <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
-              <h2 className="text-2xl font-bold mb-4 text-blue-400">Tempo</h2>
+              <h2 className="text-2xl mb-4 text-blue-400">Tempo</h2>
               <div className="flex items-center gap-6">
-                <label htmlFor="bpm" className="text-xl font-bold min-w-fit">
+                <label htmlFor="bpm" className="text-xl min-w-fit">
                   BPM: {bpm}
                 </label>
                 <input
@@ -520,7 +520,7 @@ function App() {
                   max="200"
                   value={bpm}
                   onChange={(e) => updateBpm(parseInt(e.target.value))}
-                  className="flex-1 h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  className="flex-1 h-3 bg-gray-700 rounded-md appearance-none cursor-pointer"
                 />
               </div>
             </div>
@@ -530,12 +530,10 @@ function App() {
               {/* Kick Pattern Grid */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold text-red-400">
-                    Kick Pattern
-                  </h2>
+                  <h2 className="text-2xl text-red-400">Kick Pattern</h2>
                   <button
                     onClick={generateKickPattern}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105"
+                    className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md transition-all transform hover:scale-105"
                   >
                     Generate New
                   </button>
@@ -552,12 +550,10 @@ function App() {
               {/* Clap Pattern Grid */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold text-cyan-400">
-                    Clap Pattern
-                  </h2>
+                  <h2 className="text-2xl text-cyan-400">Clap Pattern</h2>
                   <button
                     onClick={generateClapPattern}
-                    className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105"
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white py-2 px-4 rounded-md transition-all transform hover:scale-105"
                   >
                     Generate New
                   </button>
@@ -574,12 +570,12 @@ function App() {
 
             {/* Markov Generation */}
             <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
-              <h2 className="text-2xl font-bold mb-4 text-purple-400">
+              <h2 className="text-2xl mb-4 text-purple-400">
                 Pattern Generation
               </h2>
               <div className="flex items-center gap-6">
                 <div className="flex-1">
-                  <label className="block text-sm font-bold mb-2">
+                  <label className="block text-sm mb-2">
                     Markov Density: {(markovDensity * 100).toFixed(0)}%
                   </label>
                   <input
@@ -591,7 +587,7 @@ function App() {
                     onChange={(e) =>
                       updateMarkovDensity(parseFloat(e.target.value))
                     }
-                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                   />
                 </div>
               </div>
@@ -601,12 +597,10 @@ function App() {
             <div className="grid md:grid-cols-2 gap-6 mb-6">
               {/* Kick Controls */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-bold mb-4 text-red-400">
-                  Kick Controls
-                </h2>
+                <h2 className="text-2xl mb-4 text-red-400">Kick Controls</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Volume: {(kickVolume * 100).toFixed(0)}%
                     </label>
                     <input
@@ -618,11 +612,11 @@ function App() {
                       onChange={(e) =>
                         updateKickVolume(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Attack: {(kickAttack * 1000).toFixed(1)}ms
                     </label>
                     <input
@@ -634,11 +628,11 @@ function App() {
                       onChange={(e) =>
                         updateKickAttack(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Release: {(kickRelease * 1000).toFixed(0)}ms
                     </label>
                     <input
@@ -650,7 +644,7 @@ function App() {
                       onChange={(e) =>
                         updateKickRelease(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                 </div>
@@ -658,12 +652,10 @@ function App() {
 
               {/* Clap Controls */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-bold mb-4 text-cyan-400">
-                  Clap Controls
-                </h2>
+                <h2 className="text-2xl mb-4 text-cyan-400">Clap Controls</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Volume: {(clapVolume * 100).toFixed(0)}%
                     </label>
                     <input
@@ -675,7 +667,7 @@ function App() {
                       onChange={(e) =>
                         updateClapVolume(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                 </div>
@@ -684,12 +676,10 @@ function App() {
 
             {/* Clock Bias Controls */}
             <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
-              <h2 className="text-2xl font-bold mb-4 text-orange-400">
-                Clock Bias
-              </h2>
+              <h2 className="text-2xl mb-4 text-orange-400">Clock Bias</h2>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-bold mb-2">
+                  <label className="block text-sm mb-2">
                     Kick Bias: {kickLoopBias.toFixed(2)}
                   </label>
                   <input
@@ -701,11 +691,11 @@ function App() {
                     onChange={(e) =>
                       updateKickLoopBias(parseFloat(e.target.value))
                     }
-                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold mb-2">
+                  <label className="block text-sm mb-2">
                     Clap Bias: {clapLoopBias.toFixed(2)}
                   </label>
                   <input
@@ -717,7 +707,7 @@ function App() {
                     onChange={(e) =>
                       updateClapLoopBias(parseFloat(e.target.value))
                     }
-                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                   />
                 </div>
               </div>
@@ -727,12 +717,10 @@ function App() {
             <div className="grid md:grid-cols-2 gap-6 mb-6">
               {/* Delay Controls */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-bold mb-4 text-purple-400">
-                  Delay
-                </h2>
+                <h2 className="text-2xl mb-4 text-purple-400">Delay</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Send: {(delaySend * 100).toFixed(0)}%
                     </label>
                     <input
@@ -744,11 +732,11 @@ function App() {
                       onChange={(e) =>
                         updateDelaySend(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Return: {(delayReturn * 100).toFixed(0)}%
                     </label>
                     <input
@@ -760,15 +748,15 @@ function App() {
                       onChange={(e) =>
                         updateDelayReturn(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Time: {(modulatorValues.delayTime * 1000).toFixed(0)}ms
                       (modulated)
                     </label>
-                    <div className="h-2 bg-gray-700 rounded-lg relative overflow-hidden">
+                    <div className="h-2 bg-gray-700 rounded-md relative overflow-hidden">
                       <div
                         className="h-full bg-purple-500 transition-all duration-75"
                         style={{
@@ -779,7 +767,7 @@ function App() {
                   </div>
                   <button
                     onClick={toggleDelayFreeze}
-                    className={`w-full py-2 px-4 rounded-lg font-bold transition-all ${
+                    className={`w-full py-2 px-4 rounded-md transition-all ${
                       delayFreeze
                         ? "bg-yellow-600 hover:bg-yellow-700 text-white"
                         : "bg-gray-700 hover:bg-gray-600 text-gray-300"
@@ -792,12 +780,10 @@ function App() {
 
               {/* Reverb Controls */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-bold mb-4 text-cyan-400">
-                  Reverb
-                </h2>
+                <h2 className="text-2xl mb-4 text-cyan-400">Reverb</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Send: {(reverbSend * 100).toFixed(0)}%
                     </label>
                     <input
@@ -809,11 +795,11 @@ function App() {
                       onChange={(e) =>
                         updateReverbSend(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Return: {(reverbReturn * 100).toFixed(0)}%
                     </label>
                     <input
@@ -825,15 +811,15 @@ function App() {
                       onChange={(e) =>
                         updateReverbReturn(parseFloat(e.target.value))
                       }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-700 rounded-md appearance-none cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Size: {(modulatorValues.reverbSize * 100).toFixed(0)}%
                       (modulated)
                     </label>
-                    <div className="h-2 bg-gray-700 rounded-lg relative overflow-hidden">
+                    <div className="h-2 bg-gray-700 rounded-md relative overflow-hidden">
                       <div
                         className="h-full bg-cyan-500 transition-all duration-75"
                         style={{
@@ -843,11 +829,11 @@ function App() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold mb-2">
+                    <label className="block text-sm mb-2">
                       Decay: {(modulatorValues.reverbDecay * 100).toFixed(0)}%
                       (modulated)
                     </label>
-                    <div className="h-2 bg-gray-700 rounded-lg relative overflow-hidden">
+                    <div className="h-2 bg-gray-700 rounded-md relative overflow-hidden">
                       <div
                         className="h-full bg-teal-500 transition-all duration-75"
                         style={{

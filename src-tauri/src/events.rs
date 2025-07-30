@@ -7,7 +7,7 @@ pub enum NodeEvent {
     // Common events
     Trigger,
     SetGain(f32),
-    
+
     // Instrument events
     SetBaseFrequency(f32),
     SetFrequencyRatio(f32),
@@ -16,19 +16,18 @@ pub enum NodeEvent {
     SetAmpRelease(f32),
     SetFreqAttack(f32),
     SetFreqRelease(f32),
-    
+
     // Delay events
     SetDelaySeconds(f32),
     SetFeedback(f32),
     SetFreeze(bool),
     SetHighpassFreq(f32),
     SetLowpassFreq(f32),
-    
+
     // Reverb events
     SetSize(f32),
-    SetDamping(f32),
     SetModulationDepth(f32),
-    
+
     // System events (when node_name is "system")
     SetBpm(f32),
     SetPaused(bool),
@@ -61,7 +60,6 @@ impl NodeEvent {
             "set_highpass_freq" => Ok(NodeEvent::SetHighpassFreq(parameter)),
             "set_lowpass_freq" => Ok(NodeEvent::SetLowpassFreq(parameter)),
             "set_size" => Ok(NodeEvent::SetSize(parameter)),
-            "set_damping" => Ok(NodeEvent::SetDamping(parameter)),
             "set_modulation_depth" => Ok(NodeEvent::SetModulationDepth(parameter)),
             // System events
             "set_bpm" => Ok(NodeEvent::SetBpm(parameter)),
@@ -75,17 +73,17 @@ impl NodeEvent {
             "set_reverb_send" => Ok(NodeEvent::SetReverbSend(parameter)),
             "set_delay_return" => Ok(NodeEvent::SetDelayReturn(parameter)),
             "set_reverb_return" => Ok(NodeEvent::SetReverbReturn(parameter)),
-            _ => Err(format!("Unknown node event: {}", event_name))
+            _ => Err(format!("Unknown node event: {}", event_name)),
         }
     }
 }
-
 
 // Audio node names
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeName {
     Kick,
     Clap,
+    HiHat,
     Chord,
     Delay,
     Reverb,
@@ -97,11 +95,12 @@ impl NodeName {
         match name {
             "kick" => Ok(NodeName::Kick),
             "clap" => Ok(NodeName::Clap),
+            "hihat" => Ok(NodeName::HiHat),
             "chord" => Ok(NodeName::Chord),
             "delay" => Ok(NodeName::Delay),
             "reverb" => Ok(NodeName::Reverb),
             "system" => Ok(NodeName::System),
-            _ => Err(format!("Unknown node name: {}", name))
+            _ => Err(format!("Unknown node name: {}", name)),
         }
     }
 }
@@ -118,10 +117,10 @@ impl SystemName {
         match name {
             "drum_machine" => Ok(SystemName::DrumMachine),
             "auditioner" => Ok(SystemName::Auditioner),
-            _ => Err(format!("Unknown system name: {}", name))
+            _ => Err(format!("Unknown system name: {}", name)),
         }
     }
-    
+
     pub fn as_str(&self) -> &'static str {
         match self {
             SystemName::DrumMachine => "drum_machine",
@@ -197,11 +196,6 @@ impl ServerEventReceiver {
         while let Some(event) = self.queue.pop() {
             emit_event(event);
         }
-    }
-
-    /// Check if there are pending events
-    pub fn has_events(&self) -> bool {
-        !self.queue.is_empty()
     }
 }
 

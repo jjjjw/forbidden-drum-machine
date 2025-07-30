@@ -437,7 +437,7 @@ mod tests {
             } else {
                 vec![1, 2, 3, 4, 5, 6, 7, 0]
             };
-            
+
             assert_eq!(
                 cycle_steps, cycle_expected,
                 "Cycle {} should match expected pattern",
@@ -529,7 +529,7 @@ mod tests {
             } else {
                 vec![1, 2, 3, 0]
             };
-            
+
             assert_eq!(
                 cycle_steps, cycle_expected,
                 "Cycle {} should match expected pattern",
@@ -599,7 +599,7 @@ mod tests {
 
         // Should have 4 occurrences of step 1 (once per cycle)
         assert_eq!(step_1_timings.len(), 4);
-        
+
         let quarter_point = total_samples as u32 / 4;
         for timing in step_1_timings {
             assert!(

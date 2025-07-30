@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 
 use crate::audio::delays::DelayLine;
-use crate::events::NodeEvent;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
-use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor, AudioNode};
+use crate::audio::{AudioGenerator, AudioNode, AudioProcessor, StereoAudioProcessor};
+use crate::events::NodeEvent;
 
 // Fast Hadamard Transform for 4x4
 fn fast_hadamard_transform_4(signals: &mut [f32; 4]) {
@@ -189,7 +189,7 @@ impl FeedbackStage4 {
         }
 
         // Apply Householder transform
-        householder_transform_4(&mut echoes);
+        fast_hadamard_transform_4(&mut echoes);
 
         // Write diffusion input to delay lines with echoes feedback
         for i in 0..4 {
@@ -422,7 +422,7 @@ pub struct FDNReverb {
 
     // Feedback stage for late reverberation
     feedback_stage: FeedbackStage8,
-    
+
     // Gain for AudioNode implementation
     gain: f32,
 }
@@ -502,7 +502,10 @@ impl StereoAudioProcessor for FDNReverb {
 impl AudioNode for FDNReverb {
     fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
+        (
+            left_in + reverb_left * self.gain,
+            right_in + reverb_right * self.gain,
+        )
     }
 
     fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
@@ -523,7 +526,7 @@ impl AudioNode for FDNReverb {
                 self.set_modulation_depth(depth);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for FDN reverb: {:?}", event))
+            _ => Err(format!("Unsupported event for FDN reverb: {:?}", event)),
         }
     }
 
@@ -585,7 +588,6 @@ mod tests {
     //     assert!(has_tail_r, "FDNReverb should produce right reverb tail");
     // }
 
-
     #[test]
     fn test_fdn_reverb_modulation() {
         let sample_rate = 44100.0;
@@ -607,8 +609,14 @@ mod tests {
         }
 
         // Should produce stable modulated reverb
-        let max_amp_l = outputs_l.iter().map(|x: &f32| x.abs()).fold(0.0f32, f32::max);
-        let max_amp_r = outputs_r.iter().map(|x: &f32| x.abs()).fold(0.0f32, f32::max);
+        let max_amp_l = outputs_l
+            .iter()
+            .map(|x: &f32| x.abs())
+            .fold(0.0f32, f32::max);
+        let max_amp_r = outputs_r
+            .iter()
+            .map(|x: &f32| x.abs())
+            .fold(0.0f32, f32::max);
 
         assert!(
             max_amp_l < 2.0,
@@ -691,11 +699,7 @@ mod tests {
     #[test]
     fn test_fast_hadamard_transform_4_energy_conservation() {
         // Test that the energy is conserved when applying the 4x4 transform
-        let test_inputs = [
-            [1.0, 2.0, 3.0, 4.0],
-            [0.5; 4],
-            [1.0, 0.0, 1.0, 0.0],
-        ];
+        let test_inputs = [[1.0, 2.0, 3.0, 4.0], [0.5; 4], [1.0, 0.0, 1.0, 0.0]];
 
         for test_input in test_inputs.iter() {
             let mut signals = *test_input;
@@ -738,6 +742,97 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_reverb_lite_stereo_energy_balance() {
+        let sample_rate = 44100.0;
+        let mut reverb = ReverbLite::new(sample_rate);
+        reverb.set_size(1.0);
+        reverb.set_feedback(0.5);
+
+        // Test with mono input to left channel
+        let mut left_energy = 0.0f32;
+        let mut right_energy = 0.0f32;
+
+        // Send impulse to left channel only
+        let _impulse = StereoAudioProcessor::process(&mut reverb, 1.0, 0.0);
+
+        // Collect reverb tail energy
+        for _ in 0..(sample_rate * 0.5) as usize {
+            let (out_l, out_r) = StereoAudioProcessor::process(&mut reverb, 0.0, 0.0);
+            left_energy += out_l * out_l;
+            right_energy += out_r * out_r;
+        }
+
+        // Calculate energy ratio
+        let energy_ratio = left_energy.min(right_energy) / left_energy.max(right_energy);
+
+        assert!(
+            energy_ratio > 0.5,
+            "Left channel input: energy ratio too low: {} (L: {}, R: {})",
+            energy_ratio,
+            left_energy,
+            right_energy
+        );
+
+        // Reset reverb and test with mono input to right channel
+        reverb = ReverbLite::new(sample_rate);
+        reverb.set_size(1.0);
+        reverb.set_feedback(0.5);
+
+        left_energy = 0.0;
+        right_energy = 0.0;
+
+        // Send impulse to right channel only
+        let _impulse = StereoAudioProcessor::process(&mut reverb, 0.0, 1.0);
+
+        // Collect reverb tail energy
+        for _ in 0..(sample_rate * 0.5) as usize {
+            let (out_l, out_r) = StereoAudioProcessor::process(&mut reverb, 0.0, 0.0);
+            left_energy += out_l * out_l;
+            right_energy += out_r * out_r;
+        }
+
+        // Calculate energy ratio
+        let energy_ratio = left_energy.min(right_energy) / left_energy.max(right_energy);
+
+        assert!(
+            energy_ratio > 0.5,
+            "Right channel input: energy ratio too low: {} (L: {}, R: {})",
+            energy_ratio,
+            left_energy,
+            right_energy
+        );
+
+        // Test with equal stereo input
+        reverb = ReverbLite::new(sample_rate);
+        reverb.set_size(1.0);
+        reverb.set_feedback(0.5);
+
+        left_energy = 0.0;
+        right_energy = 0.0;
+
+        // Send equal impulse to both channels
+        let _impulse = StereoAudioProcessor::process(&mut reverb, 0.7, 0.7);
+
+        // Collect reverb tail energy
+        for _ in 0..(sample_rate * 0.5) as usize {
+            let (out_l, out_r) = StereoAudioProcessor::process(&mut reverb, 0.0, 0.0);
+            left_energy += out_l * out_l;
+            right_energy += out_r * out_r;
+        }
+
+        // Calculate energy ratio
+        let energy_ratio = left_energy.min(right_energy) / left_energy.max(right_energy);
+
+        assert!(
+            energy_ratio > 0.8,
+            "Equal stereo input: energy should be well balanced: {} (L: {}, R: {})",
+            energy_ratio,
+            left_energy,
+            right_energy
+        );
+    }
 }
 
 pub struct ReverbLite {
@@ -746,7 +841,7 @@ pub struct ReverbLite {
 
     // Feedback stage for late reverberation (4x4 instead of 8x8)
     feedback_stage: FeedbackStage4,
-    
+
     // Gain for AudioNode implementation
     gain: f32,
 }
@@ -792,12 +887,6 @@ impl ReverbLite {
     pub fn set_gain(&mut self, gain: f32) {
         self.gain = gain;
     }
-
-    // For compatibility with DownsampledReverbLite
-    pub fn set_damping(&mut self, _damping: f32) {
-        // ReverbLite doesn't have individual damping control like the full version
-        // This is here for API compatibility
-    }
 }
 
 impl StereoAudioProcessor for ReverbLite {
@@ -805,7 +894,7 @@ impl StereoAudioProcessor for ReverbLite {
         // Scale input and distribute to 4-channel array
         let mut reflections = [0.0f32; 4];
         reflections[0] = left * 0.5;
-        reflections[1] = right * 0.5;
+        reflections[3] = right * 0.5;
 
         // Process through 4 diffusion stages (same as full FDN)
         for stage in &mut self.diffusion_stages {
@@ -836,15 +925,11 @@ impl AudioNode for ReverbLite {
         let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
         (left_in + reverb_left, right_in + reverb_right)
     }
-    
+
     fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
         match event {
             NodeEvent::SetFeedback(feedback) => {
                 self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetDamping(damping) => {
-                self.set_damping(damping);
                 Ok(())
             }
             NodeEvent::SetSize(size) => {
@@ -859,10 +944,10 @@ impl AudioNode for ReverbLite {
                 self.set_gain(gain);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for ReverbLite: {:?}", event))
+            _ => Err(format!("Unsupported event for ReverbLite: {:?}", event)),
         }
     }
-    
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         StereoAudioProcessor::set_sample_rate(self, sample_rate);
     }
@@ -888,7 +973,7 @@ pub struct DownsampledReverb {
     // Output hold for upsampling
     output_hold_left: f32,
     output_hold_right: f32,
-    
+
     // Gain for AudioNode implementation
     gain: f32,
 }
@@ -960,7 +1045,7 @@ impl StereoAudioProcessor for DownsampledReverb {
         // Apply high-pass filter first (300Hz)
         let hp_left = self.hp_filter_left.process(left);
         let hp_right = self.hp_filter_right.process(right);
-        
+
         // Apply 2-stage anti-aliasing filter (10kHz lowpass)
         let filtered_left = self
             .aa_filter_left_2
@@ -993,7 +1078,10 @@ impl StereoAudioProcessor for DownsampledReverb {
 impl AudioNode for DownsampledReverb {
     fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
+        (
+            left_in + reverb_left * self.gain,
+            right_in + reverb_right * self.gain,
+        )
     }
 
     fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
@@ -1010,7 +1098,10 @@ impl AudioNode for DownsampledReverb {
                 self.set_size(size);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for DownsampledReverb: {:?}", event))
+            _ => Err(format!(
+                "Unsupported event for DownsampledReverb: {:?}",
+                event
+            )),
         }
     }
 
@@ -1039,7 +1130,7 @@ pub struct DownsampledReverbLite {
     // Output hold for upsampling
     output_hold_left: f32,
     output_hold_right: f32,
-    
+
     // Gain for AudioNode implementation
     gain: f32,
 }
@@ -1097,10 +1188,6 @@ impl DownsampledReverbLite {
         self.reverb.set_feedback(feedback);
     }
 
-    pub fn set_damping(&mut self, damping: f32) {
-        self.reverb.set_damping(damping);
-    }
-
     pub fn set_size(&mut self, size: f32) {
         self.reverb.set_size(size);
     }
@@ -1119,7 +1206,7 @@ impl StereoAudioProcessor for DownsampledReverbLite {
         // Apply high-pass filter first (300Hz)
         let hp_left = self.hp_filter_left.process(left);
         let hp_right = self.hp_filter_right.process(right);
-        
+
         // Apply 2-stage anti-aliasing filter (10kHz lowpass)
         let filtered_left = self
             .aa_filter_left_2
@@ -1152,7 +1239,10 @@ impl StereoAudioProcessor for DownsampledReverbLite {
 impl AudioNode for DownsampledReverbLite {
     fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
         let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (left_in + reverb_left * self.gain, right_in + reverb_right * self.gain)
+        (
+            left_in + reverb_left * self.gain,
+            right_in + reverb_right * self.gain,
+        )
     }
 
     fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
@@ -1165,10 +1255,6 @@ impl AudioNode for DownsampledReverbLite {
                 self.set_feedback(feedback);
                 Ok(())
             }
-            NodeEvent::SetDamping(damping) => {
-                self.set_damping(damping);
-                Ok(())
-            }
             NodeEvent::SetSize(size) => {
                 self.set_size(size);
                 Ok(())
@@ -1177,7 +1263,10 @@ impl AudioNode for DownsampledReverbLite {
                 self.set_modulation_depth(depth);
                 Ok(())
             }
-            _ => Err(format!("Unsupported event for DownsampledReverbLite: {:?}", event))
+            _ => Err(format!(
+                "Unsupported event for DownsampledReverbLite: {:?}",
+                event
+            )),
         }
     }
 

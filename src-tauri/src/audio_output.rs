@@ -110,7 +110,7 @@ impl AudioOutput {
                     for frame in data.chunks_mut(2) {
                         // Process stereo sample
                         let (left, right) = audio_server.next_sample();
-                        
+
                         // Apply limiting and NaN protection
                         let left_limited = if left.is_finite() {
                             left.clamp(-0.95, 0.95)
@@ -122,7 +122,7 @@ impl AudioOutput {
                         } else {
                             0.0
                         };
-                        
+
                         // Write stereo output
                         frame[0] = T::from_sample(left_limited);
                         frame[1] = T::from_sample(right_limited);

@@ -100,6 +100,35 @@ const clapDrumConfig: InstrumentConfig = {
   ],
 };
 
+// Hi-hat configuration
+const hiHatConfig: InstrumentConfig = {
+  name: "Hi-Hat",
+  color: "yellow",
+  triggerNode: "hihat",
+  parameters: [
+    {
+      name: "Gain",
+      node: "hihat",
+      event: "set_gain",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      defaultValue: 1.0,
+      unit: "%",
+    },
+    {
+      name: "Length",
+      node: "hihat", 
+      event: "set_amp_release",
+      min: 0.002,
+      max: 0.5,
+      step: 0.001,
+      defaultValue: 0.05,
+      unit: "ms",
+    },
+  ],
+};
+
 // Chord synth configuration
 const chordSynthConfig: InstrumentConfig = {
   name: "Chord Synth",
@@ -236,6 +265,7 @@ export function AuditionerPage(): JSX.Element {
     <div className="space-y-8">
       <Auditioner config={kickDrumConfig} />
       <Auditioner config={clapDrumConfig} />
+      <Auditioner config={hiHatConfig} />
       <Auditioner config={chordSynthConfig} />
       <Auditioner config={reverbConfig} />
     </div>

@@ -163,3 +163,47 @@ impl AudioGenerator for PMOscillator {
         self.set_sample_rate(sample_rate);
     }
 }
+
+/// Hash-based noise generator that simulates Hasher.ar(Sweep.ar) from SuperCollider
+/// Creates chaotic noise by applying a hash function to a linear ramp (sweep)
+pub struct HasherNoise {
+    phase_gen: PhaseGenerator,
+}
+
+impl HasherNoise {
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            // Use very slow frequency for sweep (1 Hz means full ramp every second)
+            phase_gen: PhaseGenerator::new(1.0, sample_rate),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.phase_gen.reset();
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.phase_gen.set_sample_rate(sample_rate);
+    }
+}
+
+impl AudioGenerator for HasherNoise {
+    fn next_sample(&mut self) -> f32 {
+        // Get phase (0.0 to 1.0) from the sweep
+        let phase = self.phase_gen.next_sample();
+        
+        // Hash function on the phase to create chaotic noise
+        let hash_input = (phase * 1000000.0) as u32;
+        let hash = hash_input
+            .wrapping_mul(0x45d9f3b)
+            .wrapping_add(0x119de1f3)
+            .wrapping_mul(0x45d9f3b);
+        
+        // Convert to float in range -1 to 1
+        (hash as f32 / u32::MAX as f32) * 2.0 - 1.0
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.set_sample_rate(sample_rate);
+    }
+}

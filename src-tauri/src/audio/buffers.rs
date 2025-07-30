@@ -19,7 +19,6 @@ impl DelayBuffer {
         }
     }
 
-
     pub fn set_delay_samples(&mut self, delay_samples: usize) {
         assert!(
             delay_samples <= self.buffer.len(),
@@ -62,7 +61,6 @@ impl DelayBuffer {
         }
         self.advance();
     }
-
 }
 
 #[cfg(test)]

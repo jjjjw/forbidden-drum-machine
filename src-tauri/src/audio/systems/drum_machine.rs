@@ -152,19 +152,19 @@ impl DrumMachineSystem {
     pub fn set_clap_loop_bias(&mut self, bias: f32) {
         self.clap_loop.set_bias(bias);
     }
-    
+
     pub fn set_delay_send(&mut self, send: f32) {
         self.delay_send = send.clamp(0.0, 1.0);
     }
-    
+
     pub fn set_reverb_send(&mut self, send: f32) {
         self.reverb_send = send.clamp(0.0, 1.0);
     }
-    
+
     pub fn set_delay_return(&mut self, return_level: f32) {
         self.delay_return = return_level.clamp(0.0, 1.0);
     }
-    
+
     pub fn set_reverb_return(&mut self, return_level: f32) {
         self.reverb_return = return_level.clamp(0.0, 1.0);
     }
@@ -191,10 +191,11 @@ impl AudioSystem for DrumMachineSystem {
         node_name: crate::events::NodeName,
         event: crate::events::NodeEvent,
     ) -> Result<(), String> {
-        use crate::events::{NodeName, NodeEvent};
+        use crate::events::{NodeEvent, NodeName};
         match node_name {
             NodeName::Kick => self.kick.handle_event(event),
             NodeName::Clap => self.clap.handle_event(event),
+            NodeName::HiHat => Err("HiHat not supported in drum machine".to_string()),
             NodeName::Chord => Err("Chord not supported in drum machine".to_string()),
             NodeName::Delay => self.delay.handle_event(event),
             NodeName::Reverb => self.reverb.handle_event(event),
@@ -245,12 +246,11 @@ impl AudioSystem for DrumMachineSystem {
                         self.set_reverb_return(return_level);
                         Ok(())
                     }
-                    _ => Err(format!("Unsupported system event: {:?}", event))
+                    _ => Err(format!("Unsupported system event: {:?}", event)),
                 }
             }
         }
     }
-
 
     fn next_sample(&mut self) -> (f32, f32) {
         // Only run sequencer when not paused
@@ -323,7 +323,7 @@ impl AudioSystem for DrumMachineSystem {
         // Send to delay first
         let delay_input = (signal.0 * self.delay_send, signal.1 * self.delay_send);
         let delay_output = self.delay.process(delay_input.0, delay_input.1);
-        
+
         // Create post-delay signal (dry + delay return)
         let post_delay_signal = (
             signal.0 + delay_output.0 * self.delay_return,
@@ -331,7 +331,10 @@ impl AudioSystem for DrumMachineSystem {
         );
 
         // Send post-delay signal (dry + delay) to reverb
-        let reverb_input = (post_delay_signal.0 * self.reverb_send, post_delay_signal.1 * self.reverb_send);
+        let reverb_input = (
+            post_delay_signal.0 * self.reverb_send,
+            post_delay_signal.1 * self.reverb_send,
+        );
         let reverb_output = self.reverb.process(reverb_input.0, reverb_input.1);
 
         // Final mix: post-delay signal + reverb return
@@ -340,7 +343,6 @@ impl AudioSystem for DrumMachineSystem {
             post_delay_signal.1 + reverb_output.1 * self.reverb_return,
         )
     }
-    
 
     fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String> {
         // Parse sequence configuration from JSON

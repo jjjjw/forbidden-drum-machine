@@ -55,12 +55,6 @@ impl AudioCommandSender {
     pub fn send(&self, command: AudioCommand) {
         self.queue.push(command);
     }
-
-    /// Try to send a command, returns true if successful
-    pub fn try_send(&self, command: AudioCommand) -> bool {
-        self.queue.push(command);
-        true // SegQueue::push is always successful (unless out of memory)
-    }
 }
 
 /// Receiver handle for audio thread
@@ -84,11 +78,6 @@ impl AudioCommandReceiver {
                 break;
             }
         }
-    }
-
-    /// Check if there are pending commands
-    pub fn has_commands(&self) -> bool {
-        !self.queue.is_empty()
     }
 }
 
