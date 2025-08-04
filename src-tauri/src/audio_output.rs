@@ -1,5 +1,5 @@
 use crate::audio::server::AudioServer;
-use crate::audio::systems::{AuditionerSystem, DrumMachineSystem};
+use crate::audio::systems::{AuditionerSystem, DrumMachineSystem, EuclideanSystem};
 use crate::commands::{AudioCommand, AudioCommandReceiver};
 use crate::events::ServerEventSender;
 use cpal::{traits::*, Sample};
@@ -33,6 +33,10 @@ impl AudioOutput {
         // Create and add auditioner system
         let auditioner_system = AuditionerSystem::new(sample_rate);
         audio_server.add_system("auditioner".to_string(), Box::new(auditioner_system));
+
+        // Create and add euclidean system
+        let euclidean_system = EuclideanSystem::new(sample_rate, event_sender.clone());
+        audio_server.add_system("euclidean".to_string(), Box::new(euclidean_system));
 
         // Start with drum machine as default
         audio_server.switch_to_system("drum_machine").unwrap();

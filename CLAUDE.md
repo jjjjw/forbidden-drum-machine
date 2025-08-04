@@ -76,6 +76,28 @@ See `inspiration.gen` for DSP algorithm references and implementations.
 - Backend: `cargo test` in src-tauri directory
 - Frontend: Tests can be added using Vite's test setup
 
+## Event Invocation Patterns
+
+### Frontend → Backend Audio Events
+When sending audio events from React components, use this exact pattern:
+
+```typescript
+await invoke("send_audio_event", {
+  systemName: "drum_machine" | "euclidean" | "auditioner",
+  nodeName: "system" | "kick" | "clap" | "delay" | "reverb" | "chord",
+  eventName: "set_bpm" | "set_paused" | "set_gain" | "trigger" | etc.,
+  parameter: number // For booleans: 0.0 = false, 1.0 = true
+});
+```
+
+**Examples:**
+- Set BPM: `{ systemName: "drum_machine", nodeName: "system", eventName: "set_bpm", parameter: 120 }`
+- Pause: `{ systemName: "drum_machine", nodeName: "system", eventName: "set_paused", parameter: 1.0 }`
+- Resume: `{ systemName: "drum_machine", nodeName: "system", eventName: "set_paused", parameter: 0.0 }`
+- Trigger kick: `{ systemName: "drum_machine", nodeName: "kick", eventName: "trigger", parameter: 0.0 }`
+
+**Important:** System-level events (BPM, pause) always use `nodeName: "system"`. Individual instrument events use their specific node names.
+
 ## Important Notes
 - Audio thread never blocks on UI operations
 - Events are strongly typed for safety

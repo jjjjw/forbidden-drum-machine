@@ -110,6 +110,7 @@ impl NodeName {
 pub enum SystemName {
     DrumMachine,
     Auditioner,
+    Euclidean,
 }
 
 impl SystemName {
@@ -117,6 +118,7 @@ impl SystemName {
         match name {
             "drum_machine" => Ok(SystemName::DrumMachine),
             "auditioner" => Ok(SystemName::Auditioner),
+            "euclidean" => Ok(SystemName::Euclidean),
             _ => Err(format!("Unknown system name: {}", name)),
         }
     }
@@ -125,6 +127,7 @@ impl SystemName {
         match self {
             SystemName::DrumMachine => "drum_machine",
             SystemName::Auditioner => "auditioner",
+            SystemName::Euclidean => "euclidean",
         }
     }
 }
