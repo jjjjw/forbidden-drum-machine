@@ -10,34 +10,122 @@ pub struct ClientEvent {
     pub node: String,
     /// Event name (e.g., "trigger", "set_gain", "set_bpm")
     pub event: String,
-    /// Event parameter (for booleans: 0.0 = false, 1.0 = true)
-    pub parameter: f32,
+    /// Optional event parameter (for booleans: 0.0 = false, 1.0 = true)
+    pub parameter: Option<f32>,
+    /// Optional data payload for complex events (serialized JSON)
+    pub data: Option<serde_json::Value>,
 }
 
 impl ClientEvent {
+    /// Create a simple event with just a parameter
     pub fn new(system: &str, node: &str, event: &str, parameter: f32) -> Self {
         Self {
             system: system.to_string(),
             node: node.to_string(),
             event: event.to_string(),
-            parameter,
+            parameter: Some(parameter),
+            data: None,
+        }
+    }
+
+    /// Create an event with data payload
+    pub fn with_data(system: &str, node: &str, event: &str, data: serde_json::Value) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: event.to_string(),
+            parameter: None,
+            data: Some(data),
+        }
+    }
+
+    /// Create an event with both parameter and data
+    pub fn with_param_and_data(system: &str, node: &str, event: &str, parameter: f32, data: serde_json::Value) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: event.to_string(),
+            parameter: Some(parameter),
+            data: Some(data),
+        }
+    }
+
+    /// Create a trigger event (no parameter needed)
+    pub fn trigger(system: &str, node: &str) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: "trigger".to_string(),
+            parameter: None,
+            data: None,
         }
     }
 
     /// Get parameter as boolean (0.0 = false, non-zero = true)
     pub fn as_bool(&self) -> bool {
-        self.parameter != 0.0
+        self.parameter.map(|p| p != 0.0).unwrap_or(false)
+    }
+
+    /// Get parameter value, defaulting to 0.0 if None
+    pub fn param(&self) -> f32 {
+        self.parameter.unwrap_or(0.0)
     }
 }
 
-// Server events for audio -> UI communication
+/// Server event - sent from backend to frontend
+/// Mirrors ClientEvent structure for symmetry
 #[derive(Debug, Clone)]
-pub enum ServerEvent {
-    KickStepChanged(u8),
-    ClapStepChanged(u8),
-    ModulatorValues(f32, f32, f32), // delay_time, reverb_size, reverb_decay
-    KickPatternGenerated([bool; 16]),
-    ClapPatternGenerated([bool; 16]),
+pub struct ServerEvent {
+    /// Source system (e.g., "drum_machine", "euclidean", "auditioner")
+    pub system: String,
+    /// Source node within system (e.g., "kick", "clap", "system")
+    pub node: String,
+    /// Event name (e.g., "step_changed", "pattern_generated", "modulator_values")
+    pub event: String,
+    /// Optional parameter value
+    pub parameter: Option<f32>,
+    /// Optional data payload for complex events (serialized JSON)
+    pub data: Option<serde_json::Value>,
+}
+
+impl ServerEvent {
+    /// Create a simple event with just a parameter
+    pub fn new(system: &str, node: &str, event: &str, parameter: f32) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: event.to_string(),
+            parameter: Some(parameter),
+            data: None,
+        }
+    }
+
+    /// Create an event with data payload
+    pub fn with_data(system: &str, node: &str, event: &str, data: serde_json::Value) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: event.to_string(),
+            parameter: None,
+            data: Some(data),
+        }
+    }
+
+    /// Create an event with both parameter and data
+    pub fn with_param_and_data(system: &str, node: &str, event: &str, parameter: f32, data: serde_json::Value) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: event.to_string(),
+            parameter: Some(parameter),
+            data: Some(data),
+        }
+    }
+
+    /// Get parameter value, defaulting to 0.0 if None
+    pub fn param(&self) -> f32 {
+        self.parameter.unwrap_or(0.0)
+    }
 }
 
 /// Lock-free event queue for audio -> UI communication

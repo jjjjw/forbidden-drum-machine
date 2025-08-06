@@ -48,31 +48,31 @@ impl AuditionerSystem {
                 Ok(())
             }
             "set_gain" => {
-                self.kick.set_gain(event.parameter);
+                self.kick.set_gain(event.param());
                 Ok(())
             }
             "set_base_frequency" => {
-                self.kick.set_base_frequency(event.parameter);
+                self.kick.set_base_frequency(event.param());
                 Ok(())
             }
             "set_frequency_ratio" => {
-                self.kick.set_frequency_ratio(event.parameter);
+                self.kick.set_frequency_ratio(event.param());
                 Ok(())
             }
             "set_amp_attack" => {
-                self.kick.set_amp_attack(event.parameter);
+                self.kick.set_amp_attack(event.param());
                 Ok(())
             }
             "set_amp_release" => {
-                self.kick.set_amp_release(event.parameter);
+                self.kick.set_amp_release(event.param());
                 Ok(())
             }
             "set_freq_attack" => {
-                self.kick.set_freq_attack(event.parameter);
+                self.kick.set_freq_attack(event.param());
                 Ok(())
             }
             "set_freq_release" => {
-                self.kick.set_freq_release(event.parameter);
+                self.kick.set_freq_release(event.param());
                 Ok(())
             }
             _ => Err(format!("Unknown kick event: {}", event.event)),
@@ -86,7 +86,7 @@ impl AuditionerSystem {
                 Ok(())
             }
             "set_gain" => {
-                self.clap.set_gain(event.parameter);
+                self.clap.set_gain(event.param());
                 Ok(())
             }
             _ => Err(format!("Unknown clap event: {}", event.event)),
@@ -100,11 +100,11 @@ impl AuditionerSystem {
                 Ok(())
             }
             "set_gain" => {
-                self.hihat.set_gain(event.parameter);
+                self.hihat.set_gain(event.param());
                 Ok(())
             }
             "set_length" => {
-                self.hihat.set_length(event.parameter);
+                self.hihat.set_length(event.param());
                 Ok(())
             }
             _ => Err(format!("Unknown hihat event: {}", event.event)),
@@ -118,27 +118,27 @@ impl AuditionerSystem {
                 Ok(())
             }
             "set_gain" => {
-                self.chord.set_gain(event.parameter);
+                self.chord.set_gain(event.param());
                 Ok(())
             }
             "set_base_frequency" => {
-                self.chord.set_base_frequency(event.parameter);
+                self.chord.set_base_frequency(event.param());
                 Ok(())
             }
             "set_modulation_index" => {
-                self.chord.set_modulation_index(event.parameter);
+                self.chord.set_modulation_index(event.param());
                 Ok(())
             }
             "set_feedback" => {
-                self.chord.set_feedback(event.parameter);
+                self.chord.set_feedback(event.param());
                 Ok(())
             }
             "set_attack" => {
-                self.chord.set_attack(event.parameter);
+                self.chord.set_attack(event.param());
                 Ok(())
             }
             "set_release" => {
-                self.chord.set_release(event.parameter);
+                self.chord.set_release(event.param());
                 Ok(())
             }
             _ => Err(format!("Unknown chord event: {}", event.event)),
@@ -148,11 +148,11 @@ impl AuditionerSystem {
     fn handle_reverb_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
         match event.event.as_str() {
             "set_size" => {
-                self.reverb.set_size(event.parameter);
+                self.reverb.set_size(event.param());
                 Ok(())
             }
             "set_modulation_depth" => {
-                self.reverb.set_modulation_depth(event.parameter);
+                self.reverb.set_modulation_depth(event.param());
                 Ok(())
             }
             _ => Err(format!("Unknown reverb event: {}", event.event)),
@@ -162,11 +162,11 @@ impl AuditionerSystem {
     fn handle_system_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
         match event.event.as_str() {
             "set_reverb_send" => {
-                self.set_reverb_send(event.parameter);
+                self.set_reverb_send(event.param());
                 Ok(())
             }
             "set_reverb_return" => {
-                self.set_reverb_return(event.parameter);
+                self.set_reverb_return(event.param());
                 Ok(())
             }
             _ => Err(format!("Unknown system event: {}", event.event)),

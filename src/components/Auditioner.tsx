@@ -43,6 +43,7 @@ export function Auditioner({ config }: AuditionerProps) {
         nodeName: param.node,
         eventName: param.event,
         parameter: value,
+        data: null,
       });
     } catch (error) {
       console.error(`Error setting ${param.name}:`, error);
@@ -55,7 +56,8 @@ export function Auditioner({ config }: AuditionerProps) {
         systemName: "auditioner",
         nodeName: config.triggerNode,
         eventName: "trigger",
-        parameter: 0.0,
+        parameter: null,
+        data: null,
       });
     } catch (error) {
       console.error(`Error triggering ${config.name}:`, error);

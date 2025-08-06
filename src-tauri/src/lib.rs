@@ -6,7 +6,7 @@ mod sequencing;
 
 use audio_output::AudioOutput;
 use commands::{ClientCommand, ClientCommandQueue};
-use events::{ServerEvent, ServerEventQueue};
+use events::ServerEventQueue;
 use std::process::ExitCode;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -27,22 +27,20 @@ fn start_event_emitter(
 ) {
     std::thread::spawn(move || {
         loop {
-            event_receiver.process_events(|event| match event {
-                ServerEvent::KickStepChanged(step) => {
-                    let _ = app_handle.emit("kick_step_changed", step);
-                }
-                ServerEvent::ClapStepChanged(step) => {
-                    let _ = app_handle.emit("clap_step_changed", step);
-                }
-                ServerEvent::ModulatorValues(delay, size, decay) => {
-                    let _ = app_handle.emit("modulator_values", (delay, size, decay));
-                }
-                ServerEvent::KickPatternGenerated(pattern) => {
-                    let _ = app_handle.emit("kick_pattern_generated", pattern.to_vec());
-                }
-                ServerEvent::ClapPatternGenerated(pattern) => {
-                    let _ = app_handle.emit("clap_pattern_generated", pattern.to_vec());
-                }
+            event_receiver.process_events(|event| {
+                // Create event name from system.node.event
+                let event_name = format!("{}_{}_{}", event.system, event.node, event.event);
+                
+                // Create payload with all event data
+                let payload = serde_json::json!({
+                    "system": event.system,
+                    "node": event.node,
+                    "event": event.event,
+                    "parameter": event.parameter,
+                    "data": event.data
+                });
+                
+                let _ = app_handle.emit(&event_name, payload);
             });
 
             // Small sleep to avoid busy waiting
@@ -88,13 +86,21 @@ fn send_audio_event(
     system_name: String,
     node_name: String,
     event_name: String,
-    parameter: f32,
+    parameter: Option<f32>,
+    data: Option<serde_json::Value>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    let client_event =
-        crate::events::ClientEvent::new(&system_name, &node_name, &event_name, parameter);
+    
+    let client_event = crate::events::ClientEvent {
+        system: system_name,
+        node: node_name,
+        event: event_name,
+        parameter,
+        data,
+    };
+    
     sender.send(ClientCommand::SendClientEvent(client_event));
     Ok(())
 }
