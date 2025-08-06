@@ -1,7 +1,6 @@
 use crate::audio::buffers::DelayBuffer;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
-use crate::audio::{AudioNode, AudioProcessor};
-use crate::events::NodeEvent;
+use crate::audio::AudioProcessor;
 
 // Simple delay line without filtering
 pub struct DelayLine {
@@ -74,39 +73,6 @@ impl AudioProcessor for DelayLine {
     }
 }
 
-impl AudioNode for DelayLine {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let mono_in = (left_in + right_in) * 0.5;
-        let delayed = AudioProcessor::process(self, mono_in) * self.gain;
-        (left_in + delayed, right_in + delayed)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetDelaySeconds(seconds) => {
-                self.set_delay_seconds(seconds);
-                Ok(())
-            }
-            NodeEvent::SetFreeze(freeze) => {
-                self.set_freeze(freeze);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for DelayLine: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        AudioProcessor::set_sample_rate(self, sample_rate);
-    }
-}
 
 // Delay line with filtering
 pub struct FilteredDelayLine {
@@ -184,50 +150,6 @@ impl AudioProcessor for FilteredDelayLine {
     }
 }
 
-impl AudioNode for FilteredDelayLine {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let mono_in = (left_in + right_in) * 0.5;
-        let delayed = AudioProcessor::process(self, mono_in) * self.gain;
-        (left_in + delayed, right_in + delayed)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetDelaySeconds(seconds) => {
-                self.set_delay_seconds(seconds);
-                Ok(())
-            }
-            NodeEvent::SetFreeze(freeze) => {
-                self.set_freeze(freeze);
-                Ok(())
-            }
-            NodeEvent::SetHighpassFreq(freq) => {
-                self.set_highpass_freq(freq);
-                Ok(())
-            }
-            NodeEvent::SetLowpassFreq(freq) => {
-                self.set_lowpass_freq(freq);
-                Ok(())
-            }
-            _ => Err(format!(
-                "Unsupported event for FilteredDelayLine: {:?}",
-                event
-            )),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        AudioProcessor::set_sample_rate(self, sample_rate);
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

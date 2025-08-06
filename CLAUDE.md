@@ -43,19 +43,19 @@ npx tsc --noEmit
 The project uses a lock-free event queue system for real-time communication between frontend and backend:
 
 1. **Frontend → Backend**: Commands sent via Tauri's `invoke()` API
-   - Pushed to `AudioCommandQueue` (lock-free queue)
+   - Pushed to `ClientCommandQueue` (lock-free queue)
    - Processed by audio thread (up to 64 commands per buffer)
    - Routed to appropriate audio nodes/systems
 
 2. **Backend → Frontend**: Events emitted from audio thread
-   - Pushed to `ServerEventQueue` 
+   - Pushed to `ServerEventQueue`
    - Polled every 16ms and emitted via Tauri events
    - Frontend listeners update React state
 
 3. **Key Event Types**:
-   - `NodeEvent`: Audio node control (trigger, parameters, modulation)
+   - `ClientEvent`: Audio node control (trigger, parameters, modulation)
    - `ServerEvent`: UI updates (step changes, patterns, modulator values)
-   - `AudioCommand`: High-level commands (system switching, sequencing)
+   - `ClientCommand`: High-level commands (system switching, sequencing)
 
 ### Audio Systems
 - **DrumMachineSystem**: Main sequencer with Markov chain generation

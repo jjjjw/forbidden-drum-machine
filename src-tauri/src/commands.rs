@@ -2,27 +2,18 @@ use crossbeam::queue::SegQueue;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub enum AudioCommand {
-    SendNodeEvent {
-        system_name: String,
-        node_name: String,
-        event_name: String,
-        parameter: f32,
-    },
+pub enum ClientCommand {
+    SendClientEvent(crate::events::ClientEvent),
     SwitchSystem(String),
-    SetSequence {
-        system_name: String,
-        sequence_data: serde_json::Value,
-    },
 }
 
 /// Lock-free command queue for audio parameter changes
 /// Uses a multiple-producer, single-consumer queue from crossbeam
-pub struct AudioCommandQueue {
-    queue: Arc<SegQueue<AudioCommand>>,
+pub struct ClientCommandQueue {
+    queue: Arc<SegQueue<ClientCommand>>,
 }
 
-impl AudioCommandQueue {
+impl ClientCommandQueue {
     pub fn new() -> Self {
         Self {
             queue: Arc::new(SegQueue::new()),
@@ -30,15 +21,15 @@ impl AudioCommandQueue {
     }
 
     /// Get a handle for sending commands (for UI thread)
-    pub fn sender(&self) -> AudioCommandSender {
-        AudioCommandSender {
+    pub fn sender(&self) -> ClientCommandSender {
+        ClientCommandSender {
             queue: Arc::clone(&self.queue),
         }
     }
 
     /// Get a handle for receiving commands (for audio thread)
-    pub fn receiver(&self) -> AudioCommandReceiver {
-        AudioCommandReceiver {
+    pub fn receiver(&self) -> ClientCommandReceiver {
+        ClientCommandReceiver {
             queue: Arc::clone(&self.queue),
         }
     }
@@ -46,28 +37,28 @@ impl AudioCommandQueue {
 
 /// Sender handle for UI thread
 #[derive(Clone)]
-pub struct AudioCommandSender {
-    queue: Arc<SegQueue<AudioCommand>>,
+pub struct ClientCommandSender {
+    queue: Arc<SegQueue<ClientCommand>>,
 }
 
-impl AudioCommandSender {
+impl ClientCommandSender {
     /// Send a command to the audio thread (non-blocking)
-    pub fn send(&self, command: AudioCommand) {
+    pub fn send(&self, command: ClientCommand) {
         self.queue.push(command);
     }
 }
 
 /// Receiver handle for audio thread
-pub struct AudioCommandReceiver {
-    queue: Arc<SegQueue<AudioCommand>>,
+pub struct ClientCommandReceiver {
+    queue: Arc<SegQueue<ClientCommand>>,
 }
 
-impl AudioCommandReceiver {
+impl ClientCommandReceiver {
     /// Process all pending commands, applying them to the drum machine
     /// This should be called at the start of each audio block
     pub fn process_commands<F>(&self, mut apply_command: F)
     where
-        F: FnMut(AudioCommand),
+        F: FnMut(ClientCommand),
     {
         // Process up to 64 commands per audio block to avoid spending too much time
         // in command processing during the audio callback
@@ -81,7 +72,7 @@ impl AudioCommandReceiver {
     }
 }
 
-impl Default for AudioCommandQueue {
+impl Default for ClientCommandQueue {
     fn default() -> Self {
         Self::new()
     }

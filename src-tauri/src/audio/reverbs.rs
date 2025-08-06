@@ -3,8 +3,7 @@ use std::collections::VecDeque;
 use crate::audio::delays::DelayLine;
 use crate::audio::filters::{OnePoleFilter, OnePoleMode};
 use crate::audio::oscillators::SineOscillator;
-use crate::audio::{AudioGenerator, AudioNode, AudioProcessor, StereoAudioProcessor};
-use crate::events::NodeEvent;
+use crate::audio::{AudioGenerator, AudioProcessor, StereoAudioProcessor};
 
 // Fast Hadamard Transform for 4x4
 fn fast_hadamard_transform_4(signals: &mut [f32; 4]) {
@@ -499,41 +498,6 @@ impl StereoAudioProcessor for FDNReverb {
     }
 }
 
-impl AudioNode for FDNReverb {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (
-            left_in + reverb_left * self.gain,
-            right_in + reverb_right * self.gain,
-        )
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetSize(size) => {
-                self.set_size(size);
-                Ok(())
-            }
-            NodeEvent::SetModulationDepth(depth) => {
-                self.set_modulation_depth(depth);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for FDN reverb: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        self.set_sample_rate(sample_rate);
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -596,14 +560,14 @@ mod tests {
         reverb.set_modulation_depth(1.0); // Full modulation
 
         // Process impulse and capture modulated reverb tail
-        let _impulse = AudioNode::process(&mut reverb, 1.0, 0.5);
+        let _impulse = StereoAudioProcessor::process(&mut reverb, 1.0, 0.5);
 
         let mut outputs_l = Vec::new();
         let mut outputs_r = Vec::new();
 
         // Process samples to hear modulated reverb tail
         for _ in 0..(0.5 * sample_rate) as usize {
-            let (out_l, out_r) = AudioNode::process(&mut reverb, 0.0, 0.0);
+            let (out_l, out_r) = StereoAudioProcessor::process(&mut reverb, 0.0, 0.0);
             outputs_l.push(out_l);
             outputs_r.push(out_r);
         }
@@ -920,38 +884,6 @@ impl StereoAudioProcessor for ReverbLite {
     }
 }
 
-impl AudioNode for ReverbLite {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (left_in + reverb_left, right_in + reverb_right)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetSize(size) => {
-                self.set_size(size);
-                Ok(())
-            }
-            NodeEvent::SetModulationDepth(depth) => {
-                self.set_modulation_depth(depth);
-                Ok(())
-            }
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for ReverbLite: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        StereoAudioProcessor::set_sample_rate(self, sample_rate);
-    }
-}
 
 // Downsampled reverb wrapper for CPU optimization (2:1 downsampling)
 pub struct DownsampledReverb {
@@ -1075,40 +1007,6 @@ impl StereoAudioProcessor for DownsampledReverb {
     }
 }
 
-impl AudioNode for DownsampledReverb {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (
-            left_in + reverb_left * self.gain,
-            right_in + reverb_right * self.gain,
-        )
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetSize(size) => {
-                self.set_size(size);
-                Ok(())
-            }
-            _ => Err(format!(
-                "Unsupported event for DownsampledReverb: {:?}",
-                event
-            )),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        StereoAudioProcessor::set_sample_rate(self, sample_rate);
-    }
-}
 
 // Downsampled ReverbLite wrapper for CPU optimization (2:1 downsampling)
 pub struct DownsampledReverbLite {
@@ -1236,41 +1134,3 @@ impl StereoAudioProcessor for DownsampledReverbLite {
     }
 }
 
-impl AudioNode for DownsampledReverbLite {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let (reverb_left, reverb_right) = StereoAudioProcessor::process(self, left_in, right_in);
-        (
-            left_in + reverb_left * self.gain,
-            right_in + reverb_right * self.gain,
-        )
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetSize(size) => {
-                self.set_size(size);
-                Ok(())
-            }
-            NodeEvent::SetModulationDepth(depth) => {
-                self.set_modulation_depth(depth);
-                Ok(())
-            }
-            _ => Err(format!(
-                "Unsupported event for DownsampledReverbLite: {:?}",
-                event
-            )),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        StereoAudioProcessor::set_sample_rate(self, sample_rate);
-    }
-}

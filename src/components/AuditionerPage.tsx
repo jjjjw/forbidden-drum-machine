@@ -119,12 +119,12 @@ const hiHatConfig: InstrumentConfig = {
     {
       name: "Length",
       node: "hihat", 
-      event: "set_amp_release",
+      event: "set_length",
       min: 0.002,
       max: 0.5,
       step: 0.001,
       defaultValue: 0.05,
-      unit: "ms",
+      unit: "s",
     },
   ],
 };
@@ -178,7 +178,7 @@ const chordSynthConfig: InstrumentConfig = {
     {
       name: "Attack",
       node: "chord",
-      event: "set_amp_attack",
+      event: "set_attack",
       min: 0.01,
       max: 2,
       step: 0.01,
@@ -188,7 +188,7 @@ const chordSynthConfig: InstrumentConfig = {
     {
       name: "Release",
       node: "chord",
-      event: "set_amp_release",
+      event: "set_release",
       min: 0.1,
       max: 8,
       step: 0.1,
@@ -235,13 +235,13 @@ const reverbConfig: InstrumentConfig = {
       unit: "%",
     },
     {
-      name: "Feedback",
+      name: "Modulation Depth",
       node: "reverb",
-      event: "set_feedback",
+      event: "set_modulation_depth",
       min: 0,
       max: 1,
       step: 0.01,
-      defaultValue: 0.5,
+      defaultValue: 0.2,
       unit: "%",
     },
   ],
@@ -252,7 +252,7 @@ export function AuditionerPage(): JSX.Element {
   useEffect(() => {
     const switchToAuditioner = async () => {
       try {
-        await invoke("switch_audio_system", { system_name: "auditioner" });
+        await invoke("switch_audio_system", { systemName: "auditioner" });
       } catch (error) {
         console.error("Error switching to auditioner system:", error);
       }

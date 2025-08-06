@@ -1,134 +1,32 @@
 use crossbeam::queue::SegQueue;
 use std::sync::Arc;
 
-// Audio node events for individual instruments and effects
+/// Client event - sent from frontend to backend
 #[derive(Debug, Clone)]
-pub enum NodeEvent {
-    // Common events
-    Trigger,
-    SetGain(f32),
-
-    // Instrument events
-    SetBaseFrequency(f32),
-    SetFrequencyRatio(f32),
-    SetModulationIndex(f32),
-    SetAmpAttack(f32),
-    SetAmpRelease(f32),
-    SetFreqAttack(f32),
-    SetFreqRelease(f32),
-
-    // Delay events
-    SetDelaySeconds(f32),
-    SetFeedback(f32),
-    SetFreeze(bool),
-    SetHighpassFreq(f32),
-    SetLowpassFreq(f32),
-
-    // Reverb events
-    SetSize(f32),
-    SetModulationDepth(f32),
-
-    // System events (when node_name is "system")
-    SetBpm(f32),
-    SetPaused(bool),
-    SetMarkovDensity(f32),
-    SetKickLoopBias(f32),
-    SetClapLoopBias(f32),
-    GenerateKickPattern,
-    GenerateClapPattern,
-    SetDelaySend(f32),
-    SetReverbSend(f32),
-    SetDelayReturn(f32),
-    SetReverbReturn(f32),
+pub struct ClientEvent {
+    /// Target system (e.g., "drum_machine", "euclidean", "auditioner")
+    pub system: String,
+    /// Target node within system (e.g., "kick", "clap", "system") 
+    pub node: String,
+    /// Event name (e.g., "trigger", "set_gain", "set_bpm")
+    pub event: String,
+    /// Event parameter (for booleans: 0.0 = false, 1.0 = true)
+    pub parameter: f32,
 }
 
-impl NodeEvent {
-    pub fn from_string(event_name: &str, parameter: f32) -> Result<Self, String> {
-        match event_name {
-            "trigger" => Ok(NodeEvent::Trigger),
-            "set_gain" => Ok(NodeEvent::SetGain(parameter)),
-            "set_base_frequency" => Ok(NodeEvent::SetBaseFrequency(parameter)),
-            "set_frequency_ratio" => Ok(NodeEvent::SetFrequencyRatio(parameter)),
-            "set_modulation_index" => Ok(NodeEvent::SetModulationIndex(parameter)),
-            "set_amp_attack" => Ok(NodeEvent::SetAmpAttack(parameter)),
-            "set_amp_release" => Ok(NodeEvent::SetAmpRelease(parameter)),
-            "set_freq_attack" => Ok(NodeEvent::SetFreqAttack(parameter)),
-            "set_freq_release" => Ok(NodeEvent::SetFreqRelease(parameter)),
-            "set_delay_seconds" => Ok(NodeEvent::SetDelaySeconds(parameter)),
-            "set_feedback" => Ok(NodeEvent::SetFeedback(parameter)),
-            "set_freeze" => Ok(NodeEvent::SetFreeze(parameter != 0.0)),
-            "set_highpass_freq" => Ok(NodeEvent::SetHighpassFreq(parameter)),
-            "set_lowpass_freq" => Ok(NodeEvent::SetLowpassFreq(parameter)),
-            "set_size" => Ok(NodeEvent::SetSize(parameter)),
-            "set_modulation_depth" => Ok(NodeEvent::SetModulationDepth(parameter)),
-            // System events
-            "set_bpm" => Ok(NodeEvent::SetBpm(parameter)),
-            "set_paused" => Ok(NodeEvent::SetPaused(parameter != 0.0)),
-            "set_markov_density" => Ok(NodeEvent::SetMarkovDensity(parameter)),
-            "set_kick_loop_bias" => Ok(NodeEvent::SetKickLoopBias(parameter)),
-            "set_clap_loop_bias" => Ok(NodeEvent::SetClapLoopBias(parameter)),
-            "generate_kick_pattern" => Ok(NodeEvent::GenerateKickPattern),
-            "generate_clap_pattern" => Ok(NodeEvent::GenerateClapPattern),
-            "set_delay_send" => Ok(NodeEvent::SetDelaySend(parameter)),
-            "set_reverb_send" => Ok(NodeEvent::SetReverbSend(parameter)),
-            "set_delay_return" => Ok(NodeEvent::SetDelayReturn(parameter)),
-            "set_reverb_return" => Ok(NodeEvent::SetReverbReturn(parameter)),
-            _ => Err(format!("Unknown node event: {}", event_name)),
-        }
-    }
-}
-
-// Audio node names
-#[derive(Debug, Clone, PartialEq)]
-pub enum NodeName {
-    Kick,
-    Clap,
-    HiHat,
-    Chord,
-    Delay,
-    Reverb,
-    System,
-}
-
-impl NodeName {
-    pub fn from_string(name: &str) -> Result<Self, String> {
-        match name {
-            "kick" => Ok(NodeName::Kick),
-            "clap" => Ok(NodeName::Clap),
-            "hihat" => Ok(NodeName::HiHat),
-            "chord" => Ok(NodeName::Chord),
-            "delay" => Ok(NodeName::Delay),
-            "reverb" => Ok(NodeName::Reverb),
-            "system" => Ok(NodeName::System),
-            _ => Err(format!("Unknown node name: {}", name)),
-        }
-    }
-}
-
-// Audio system names
-#[derive(Debug, Clone, PartialEq)]
-pub enum SystemName {
-    DrumMachine,
-    Auditioner,
-    Euclidean,
-}
-
-impl SystemName {
-    pub fn from_string(name: &str) -> Result<Self, String> {
-        match name {
-            "drum_machine" => Ok(SystemName::DrumMachine),
-            "auditioner" => Ok(SystemName::Auditioner),
-            "euclidean" => Ok(SystemName::Euclidean),
-            _ => Err(format!("Unknown system name: {}", name)),
+impl ClientEvent {
+    pub fn new(system: &str, node: &str, event: &str, parameter: f32) -> Self {
+        Self {
+            system: system.to_string(),
+            node: node.to_string(),
+            event: event.to_string(),
+            parameter,
         }
     }
 
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SystemName::DrumMachine => "drum_machine",
-            SystemName::Auditioner => "auditioner",
-            SystemName::Euclidean => "euclidean",
-        }
+    /// Get parameter as boolean (0.0 = false, non-zero = true)
+    pub fn as_bool(&self) -> bool {
+        self.parameter != 0.0
     }
 }
 

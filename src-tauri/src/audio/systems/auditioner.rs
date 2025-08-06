@@ -1,6 +1,6 @@
 use crate::audio::instruments::{ChordSynth, ClapDrum, HiHat, KickDrum};
 use crate::audio::reverbs::ReverbLite;
-use crate::audio::{AudioNode, AudioSystem};
+use crate::audio::{AudioGenerator, AudioSystem, StereoAudioProcessor};
 
 /// Auditioner system for testing and tweaking instruments
 /// Allows triggering individual instruments without sequencing
@@ -40,72 +40,177 @@ impl AuditionerSystem {
     pub fn set_reverb_return(&mut self, return_level: f32) {
         self.reverb_return = return_level.clamp(0.0, 1.0);
     }
+
+    fn handle_kick_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "trigger" => {
+                self.kick.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.kick.set_gain(event.parameter);
+                Ok(())
+            }
+            "set_base_frequency" => {
+                self.kick.set_base_frequency(event.parameter);
+                Ok(())
+            }
+            "set_frequency_ratio" => {
+                self.kick.set_frequency_ratio(event.parameter);
+                Ok(())
+            }
+            "set_amp_attack" => {
+                self.kick.set_amp_attack(event.parameter);
+                Ok(())
+            }
+            "set_amp_release" => {
+                self.kick.set_amp_release(event.parameter);
+                Ok(())
+            }
+            "set_freq_attack" => {
+                self.kick.set_freq_attack(event.parameter);
+                Ok(())
+            }
+            "set_freq_release" => {
+                self.kick.set_freq_release(event.parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown kick event: {}", event.event)),
+        }
+    }
+
+    fn handle_clap_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "trigger" => {
+                self.clap.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.clap.set_gain(event.parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown clap event: {}", event.event)),
+        }
+    }
+
+    fn handle_hihat_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "trigger" => {
+                self.hihat.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.hihat.set_gain(event.parameter);
+                Ok(())
+            }
+            "set_length" => {
+                self.hihat.set_length(event.parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown hihat event: {}", event.event)),
+        }
+    }
+
+    fn handle_chord_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "trigger" => {
+                self.chord.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.chord.set_gain(event.parameter);
+                Ok(())
+            }
+            "set_base_frequency" => {
+                self.chord.set_base_frequency(event.parameter);
+                Ok(())
+            }
+            "set_modulation_index" => {
+                self.chord.set_modulation_index(event.parameter);
+                Ok(())
+            }
+            "set_feedback" => {
+                self.chord.set_feedback(event.parameter);
+                Ok(())
+            }
+            "set_attack" => {
+                self.chord.set_attack(event.parameter);
+                Ok(())
+            }
+            "set_release" => {
+                self.chord.set_release(event.parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown chord event: {}", event.event)),
+        }
+    }
+
+    fn handle_reverb_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "set_size" => {
+                self.reverb.set_size(event.parameter);
+                Ok(())
+            }
+            "set_modulation_depth" => {
+                self.reverb.set_modulation_depth(event.parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown reverb event: {}", event.event)),
+        }
+    }
+
+    fn handle_system_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "set_reverb_send" => {
+                self.set_reverb_send(event.parameter);
+                Ok(())
+            }
+            "set_reverb_return" => {
+                self.set_reverb_return(event.parameter);
+                Ok(())
+            }
+            _ => Err(format!("Unknown system event: {}", event.event)),
+        }
+    }
 }
 
 impl AudioSystem for AuditionerSystem {
-    fn handle_node_event(
-        &mut self,
-        node_name: crate::events::NodeName,
-        event: crate::events::NodeEvent,
-    ) -> Result<(), String> {
-        use crate::events::NodeName;
-        match node_name {
-            NodeName::Kick => self.kick.handle_event(event),
-            NodeName::Clap => self.clap.handle_event(event),
-            NodeName::HiHat => self.hihat.handle_event(event),
-            NodeName::Chord => self.chord.handle_event(event),
-            NodeName::Reverb => self.reverb.handle_event(event),
-            NodeName::System => {
-                // Handle system events for reverb send/return
-                use crate::events::NodeEvent;
-                match event {
-                    NodeEvent::SetReverbSend(send) => {
-                        self.set_reverb_send(send);
-                        Ok(())
-                    }
-                    NodeEvent::SetReverbReturn(return_level) => {
-                        self.set_reverb_return(return_level);
-                        Ok(())
-                    }
-                    _ => Err(format!(
-                        "Unsupported system event for Auditioner: {:?}",
-                        event
-                    )),
-                }
-            }
-            _ => Err(format!("Unsupported node for Auditioner: {:?}", node_name)),
+    fn handle_client_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.node.as_str() {
+            "kick" => self.handle_kick_event(event),
+            "clap" => self.handle_clap_event(event),
+            "hihat" => self.handle_hihat_event(event),
+            "chord" => self.handle_chord_event(event),
+            "reverb" => self.handle_reverb_event(event),
+            "system" => self.handle_system_event(event),
+            _ => Err(format!("Unknown node '{}' for auditioner system", event.node)),
         }
     }
 
     fn next_sample(&mut self) -> (f32, f32) {
-        // Start with silence (no input signal)
-        let mut signal = (0.0, 0.0);
+        // Generate samples from instruments (mono sources)
+        let kick_sample = self.kick.next_sample();
+        let clap_sample = self.clap.next_sample();
+        let hihat_sample = self.hihat.next_sample();
+        let chord_sample = self.chord.next_sample();
 
-        // Add instruments
-        signal = self.kick.process(signal.0, signal.1);
-        signal = self.clap.process(signal.0, signal.1);
-        signal = self.hihat.process(signal.0, signal.1);
-        signal = self.chord.process(signal.0, signal.1);
+        // Mix all instruments (convert mono to stereo)
+        let dry_signal = (
+            kick_sample + clap_sample + hihat_sample + chord_sample,
+            kick_sample + clap_sample + hihat_sample + chord_sample,
+        );
 
         // Send to reverb and mix with dry signal
-        let reverb_input = (signal.0 * self.reverb_send, signal.1 * self.reverb_send);
+        let reverb_input = (dry_signal.0 * self.reverb_send, dry_signal.1 * self.reverb_send);
         let reverb_output = self.reverb.process(reverb_input.0, reverb_input.1);
 
         // Final mix: dry signal + reverb return
         (
-            signal.0 + reverb_output.0 * self.reverb_return,
-            signal.1 + reverb_output.1 * self.reverb_return,
+            dry_signal.0 + reverb_output.0 * self.reverb_return,
+            dry_signal.1 + reverb_output.1 * self.reverb_return,
         )
     }
 
-    fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String> {
-        // Auditioner doesn't use sequences, but we can use this for configuration
-        println!(
-            "AuditionerSystem: set_sequence called with: {}",
-            sequence_config
-        );
-        Ok(())
-    }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;

@@ -5,7 +5,7 @@ mod events;
 mod sequencing;
 
 use audio_output::AudioOutput;
-use commands::{AudioCommand, AudioCommandQueue};
+use commands::{ClientCommand, ClientCommandQueue};
 use events::{ServerEvent, ServerEventQueue};
 use std::process::ExitCode;
 use std::sync::Mutex;
@@ -15,7 +15,7 @@ use tauri::{Emitter, Manager, State};
 
 // App state containing only thread-safe communication channels
 struct AppAudioState {
-    command_queue: AudioCommandQueue,
+    command_queue: ClientCommandQueue,
 }
 
 type AppState = Mutex<AppAudioState>;
@@ -93,12 +93,9 @@ fn send_audio_event(
 ) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SendNodeEvent {
-        system_name,
-        node_name,
-        event_name,
-        parameter,
-    });
+    let client_event =
+        crate::events::ClientEvent::new(&system_name, &node_name, &event_name, parameter);
+    sender.send(ClientCommand::SendClientEvent(client_event));
     Ok(())
 }
 
@@ -106,29 +103,14 @@ fn send_audio_event(
 fn switch_audio_system(system_name: String, state: State<'_, AppState>) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SwitchSystem(system_name));
-    Ok(())
-}
-
-#[tauri::command]
-fn set_sequence(
-    system_name: String,
-    sequence_data: serde_json::Value,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
-    let sender = app_state.command_queue.sender();
-    sender.send(AudioCommand::SetSequence {
-        system_name,
-        sequence_data,
-    });
+    sender.send(ClientCommand::SwitchSystem(system_name));
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> ExitCode {
     // Initialize audio system in run() scope
-    let command_queue = AudioCommandQueue::new();
+    let command_queue = ClientCommandQueue::new();
     let event_queue = ServerEventQueue::new();
 
     let command_receiver = command_queue.receiver();
@@ -152,8 +134,7 @@ pub fn run() -> ExitCode {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             send_audio_event,
-            switch_audio_system,
-            set_sequence
+            switch_audio_system
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

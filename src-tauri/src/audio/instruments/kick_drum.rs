@@ -1,7 +1,6 @@
 use crate::audio::envelopes::AREnvelope;
 use crate::audio::oscillators::SineOscillator;
-use crate::audio::{AudioGenerator, AudioNode};
-use crate::events::NodeEvent;
+use crate::audio::AudioGenerator;
 
 pub struct KickDrum {
     oscillator: SineOscillator,
@@ -100,51 +99,3 @@ impl AudioGenerator for KickDrum {
     }
 }
 
-impl AudioNode for KickDrum {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let drum_sample = self.next_sample() * self.gain;
-        (left_in + drum_sample, right_in + drum_sample)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::Trigger => {
-                self.trigger();
-                Ok(())
-            }
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetBaseFrequency(freq) => {
-                self.set_base_frequency(freq);
-                Ok(())
-            }
-            NodeEvent::SetFrequencyRatio(ratio) => {
-                self.set_frequency_ratio(ratio);
-                Ok(())
-            }
-            NodeEvent::SetAmpAttack(time) => {
-                self.set_amp_attack(time);
-                Ok(())
-            }
-            NodeEvent::SetAmpRelease(time) => {
-                self.set_amp_release(time);
-                Ok(())
-            }
-            NodeEvent::SetFreqAttack(time) => {
-                self.set_freq_attack(time);
-                Ok(())
-            }
-            NodeEvent::SetFreqRelease(time) => {
-                self.set_freq_release(time);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for KickDrum: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        AudioGenerator::set_sample_rate(self, sample_rate);
-    }
-}

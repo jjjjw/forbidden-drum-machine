@@ -58,18 +58,6 @@ impl AudioServer {
         }
     }
 
-    /// Send a set sequence command to a specific system
-    pub fn send_set_sequence(
-        &mut self,
-        system_name: &str,
-        sequence_config: &serde_json::Value,
-    ) -> Result<(), String> {
-        if let Some(system) = self.systems.get_mut(system_name) {
-            system.set_sequence(sequence_config)
-        } else {
-            Err(format!("System '{}' not found", system_name))
-        }
-    }
 
     /// Set sample rate for all systems
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -85,20 +73,12 @@ impl AudioServer {
         self.systems.keys().map(|s| s.as_str()).collect()
     }
 
-    /// Send a node event to a specific system
-    pub fn send_node_event(
-        &mut self,
-        system_name: &str,
-        node_name: &str,
-        event_name: &str,
-        parameter: f32,
-    ) -> Result<(), String> {
-        if let Some(system) = self.systems.get_mut(system_name) {
-            let node = crate::events::NodeName::from_string(node_name)?;
-            let event = crate::events::NodeEvent::from_string(event_name, parameter)?;
-            system.handle_node_event(node, event)
+    /// Send a client event to a specific system
+    pub fn send_client_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        if let Some(system) = self.systems.get_mut(&event.system) {
+            system.handle_client_event(event)
         } else {
-            Err(format!("System '{}' not found", system_name))
+            Err(format!("System '{}' not found", &event.system))
         }
     }
 }

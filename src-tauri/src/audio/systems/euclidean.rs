@@ -1,246 +1,404 @@
-use crate::audio::instruments::{ChordSynth, ClapDrum, HiHat, KickDrum};
-use crate::audio::{AudioGenerator, AudioNode, AudioSystem};
-use crate::events::{NodeEvent, NodeName, ServerEvent, ServerEventSender};
-use crate::sequencing::{Clock, EuclideanSequencer, Loop};
+// use crate::audio::instruments::{ChordSynth, ClapDrum, HiHat, KickDrum};
+// use crate::audio::{AudioGenerator, AudioSystem};
+// use crate::events::{ServerEvent, ServerEventSender};
+// use crate::sequencing::{Clock, EuclideanSequencer, Loop};
 
-// Calculate the number of samples for 4 beats based on BPM and sample rate
-fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
-    (60.0 / bpm * sample_rate) as u32 * 4
-}
+// // Calculate the number of samples for 4 beats based on BPM and sample rate
+// fn bpm_to_samples(bpm: f32, sample_rate: f32) -> u32 {
+//     (60.0 / bpm * sample_rate) as u32 * 4
+// }
 
-pub struct EuclideanSystem {
-    // Audio nodes
-    kick: KickDrum,
-    clap: ClapDrum,
-    hihat: HiHat,
-    chord: ChordSynth,
+// pub struct EuclideanSystem {
+//     // Audio nodes
+//     kick: KickDrum,
+//     clap: ClapDrum,
+//     hihat: HiHat,
+//     chord: ChordSynth,
 
-    // Main clock and sequencer loop
-    clock: Clock,
-    main_loop: Loop,
-    
-    // Euclidean sequencers for each instrument
-    kick_sequencer: EuclideanSequencer,
-    clap_sequencer: EuclideanSequencer,
-    hihat_sequencer: EuclideanSequencer,
-    chord_sequencer: EuclideanSequencer,
+//     // Main clock and sequencer loop
+//     clock: Clock,
+//     main_loop: Loop,
 
-    // Event sender for communicating with UI
-    event_sender: ServerEventSender,
+//     // Euclidean sequencers for each instrument
+//     kick_sequencer: EuclideanSequencer,
+//     clap_sequencer: EuclideanSequencer,
+//     hihat_sequencer: EuclideanSequencer,
+//     chord_sequencer: EuclideanSequencer,
 
-    // Track previous steps for event emission
-    prev_kick_step: Option<u32>,
-    prev_clap_step: Option<u32>,
-    prev_hihat_step: Option<u32>,
-    prev_chord_step: Option<u32>,
+//     // Event sender for communicating with UI
+//     event_sender: ServerEventSender,
 
-    sample_rate: f32,
-    
-    // System parameters
-    bpm: f32,
-    is_paused: bool,
-}
+//     // Track previous steps for event emission
+//     prev_kick_step: Option<u32>,
+//     prev_clap_step: Option<u32>,
+//     prev_hihat_step: Option<u32>,
+//     prev_chord_step: Option<u32>,
 
-impl EuclideanSystem {
-    pub fn new(sample_rate: f32, event_sender: ServerEventSender) -> Self {
-        let clock = Clock::new();
-        let total_samples = bpm_to_samples(120.0, sample_rate);
-        let main_loop = Loop::new(total_samples, 16); // 16 steps per 4 beats
+//     sample_rate: f32,
 
-        Self {
-            // Create audio nodes
-            kick: KickDrum::new(sample_rate),
-            clap: ClapDrum::new(sample_rate),
-            hihat: HiHat::new(sample_rate),
-            chord: ChordSynth::new(sample_rate),
+//     // System parameters
+//     bpm: f32,
+//     is_paused: bool,
+// }
 
-            clock,
-            main_loop,
+// impl EuclideanSystem {
+//     pub fn new(sample_rate: f32, event_sender: ServerEventSender) -> Self {
+//         let clock = Clock::new();
+//         let total_samples = bpm_to_samples(120.0, sample_rate);
+//         let main_loop = Loop::new(total_samples, 16); // 16 steps per 4 beats
 
-            // Initialize Euclidean sequencers with default patterns
-            kick_sequencer: EuclideanSequencer::new(8, 3, 1.0),      // Classic 3/8 kick pattern
-            clap_sequencer: EuclideanSequencer::new(8, 2, 1.0),     // Simple 2/8 clap pattern
-            hihat_sequencer: EuclideanSequencer::new(16, 7, 2.0),   // Busy hihat pattern, double tempo
-            chord_sequencer: EuclideanSequencer::new(8, 1, 0.5),    // Sparse chord pattern, half tempo
+//         Self {
+//             // Create audio nodes
+//             kick: KickDrum::new(sample_rate),
+//             clap: ClapDrum::new(sample_rate),
+//             hihat: HiHat::new(sample_rate),
+//             chord: ChordSynth::new(sample_rate),
 
-            event_sender,
-            
-            prev_kick_step: None,
-            prev_clap_step: None,
-            prev_hihat_step: None,
-            prev_chord_step: None,
+//             clock,
+//             main_loop,
 
-            sample_rate,
-            bpm: 120.0,
-            is_paused: false,
-        }
-    }
+//             // Initialize Euclidean sequencers with default patterns
+//             kick_sequencer: EuclideanSequencer::new(8, 3, 1.0),      // Classic 3/8 kick pattern
+//             clap_sequencer: EuclideanSequencer::new(8, 2, 1.0),     // Simple 2/8 clap pattern
+//             hihat_sequencer: EuclideanSequencer::new(16, 7, 2.0),   // Busy hihat pattern, double tempo
+//             chord_sequencer: EuclideanSequencer::new(8, 1, 0.5),    // Sparse chord pattern, half tempo
 
-    fn update_clock_for_bpm(&mut self) {
-        let total_samples = bpm_to_samples(self.bpm, self.sample_rate);
-        self.main_loop.set_total_samples(total_samples);
-    }
-}
+//             event_sender,
 
-impl AudioSystem for EuclideanSystem {
-    fn next_sample(&mut self) -> (f32, f32) {
-        if self.is_paused {
-            return (0.0, 0.0);
-        }
+//             prev_kick_step: None,
+//             prev_clap_step: None,
+//             prev_hihat_step: None,
+//             prev_chord_step: None,
 
-        // Tick the main clock
-        self.clock.tick();
-        
-        // Check if we've hit a step boundary (every 1/16th note)
-        if let Some(_step) = self.main_loop.tick(&self.clock) {
-            // Process each sequencer
-            
-            // Kick
-            if self.kick_sequencer.tick() {
-                self.kick.handle_event(NodeEvent::Trigger).ok();
-            }
-            let kick_step = self.kick_sequencer.get_current_step();
-            if self.prev_kick_step != Some(kick_step) {
-                self.event_sender.send(ServerEvent::KickStepChanged(kick_step as u8));
-                self.prev_kick_step = Some(kick_step);
-            }
+//             sample_rate,
+//             bpm: 120.0,
+//             is_paused: false,
+//         }
+//     }
 
-            // Clap
-            if self.clap_sequencer.tick() {
-                self.clap.handle_event(NodeEvent::Trigger).ok();
-            }
-            let clap_step = self.clap_sequencer.get_current_step();
-            if self.prev_clap_step != Some(clap_step) {
-                self.event_sender.send(ServerEvent::ClapStepChanged(clap_step as u8));
-                self.prev_clap_step = Some(clap_step);
-            }
+//     fn update_clock_for_bpm(&mut self) {
+//         let total_samples = bpm_to_samples(self.bpm, self.sample_rate);
+//         self.main_loop.set_total_samples(total_samples);
+//     }
 
-            // HiHat
-            if self.hihat_sequencer.tick() {
-                self.hihat.handle_event(NodeEvent::Trigger).ok();
-            }
-            let hihat_step = self.hihat_sequencer.get_current_step();
-            if self.prev_hihat_step != Some(hihat_step) {
-                self.prev_hihat_step = Some(hihat_step);
-            }
+//     fn handle_kick_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+//         match event.event.as_str() {
+//             "trigger" => {
+//                 self.kick.trigger();
+//                 Ok(())
+//             }
+//             "set_gain" => {
+//                 self.kick.set_gain(event.parameter);
+//                 Ok(())
+//             }
+//             "set_base_frequency" => {
+//                 self.kick.set_base_frequency(event.parameter);
+//                 Ok(())
+//             }
+//             "set_frequency_ratio" => {
+//                 self.kick.set_frequency_ratio(event.parameter);
+//                 Ok(())
+//             }
+//             "set_modulation_index" => {
+//                 self.kick.set_modulation_index(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_attack" => {
+//                 self.kick.set_amp_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_release" => {
+//                 self.kick.set_amp_release(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_attack" => {
+//                 self.kick.set_freq_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_release" => {
+//                 self.kick.set_freq_release(event.parameter);
+//                 Ok(())
+//             }
+//             _ => Err(format!("Unknown kick event: {}", event.event)),
+//         }
+//     }
 
-            // Chord
-            if self.chord_sequencer.tick() {
-                self.chord.handle_event(NodeEvent::Trigger).ok();
-            }
-            let chord_step = self.chord_sequencer.get_current_step();
-            if self.prev_chord_step != Some(chord_step) {
-                self.prev_chord_step = Some(chord_step);
-            }
-        }
+//     fn handle_clap_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+//         match event.event.as_str() {
+//             "trigger" => {
+//                 self.clap.trigger();
+//                 Ok(())
+//             }
+//             "set_gain" => {
+//                 self.clap.set_gain(event.parameter);
+//                 Ok(())
+//             }
+//             "set_base_frequency" => {
+//                 self.clap.set_base_frequency(event.parameter);
+//                 Ok(())
+//             }
+//             "set_frequency_ratio" => {
+//                 self.clap.set_frequency_ratio(event.parameter);
+//                 Ok(())
+//             }
+//             "set_modulation_index" => {
+//                 self.clap.set_modulation_index(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_attack" => {
+//                 self.clap.set_amp_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_release" => {
+//                 self.clap.set_amp_release(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_attack" => {
+//                 self.clap.set_freq_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_release" => {
+//                 self.clap.set_freq_release(event.parameter);
+//                 Ok(())
+//             }
+//             _ => Err(format!("Unknown clap event: {}", event.event)),
+//         }
+//     }
 
-        // Generate audio from instruments (using stereo process method)
-        let (kick_left, kick_right) = self.kick.process(0.0, 0.0);
-        let (clap_left, clap_right) = self.clap.process(0.0, 0.0);
-        let (hihat_left, hihat_right) = self.hihat.process(0.0, 0.0);
-        let (chord_left, chord_right) = self.chord.process(0.0, 0.0);
+//     fn handle_hihat_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+//         match event.event.as_str() {
+//             "trigger" => {
+//                 self.hihat.trigger();
+//                 Ok(())
+//             }
+//             "set_gain" => {
+//                 self.hihat.set_gain(event.parameter);
+//                 Ok(())
+//             }
+//             "set_base_frequency" => {
+//                 self.hihat.set_base_frequency(event.parameter);
+//                 Ok(())
+//             }
+//             "set_frequency_ratio" => {
+//                 self.hihat.set_frequency_ratio(event.parameter);
+//                 Ok(())
+//             }
+//             "set_modulation_index" => {
+//                 self.hihat.set_modulation_index(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_attack" => {
+//                 self.hihat.set_amp_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_release" => {
+//                 self.hihat.set_amp_release(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_attack" => {
+//                 self.hihat.set_freq_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_release" => {
+//                 self.hihat.set_freq_release(event.parameter);
+//                 Ok(())
+//             }
+//             _ => Err(format!("Unknown hihat event: {}", event.event)),
+//         }
+//     }
 
-        // Mix signals
-        let final_left = kick_left + clap_left + hihat_left + chord_left;
-        let final_right = kick_right + clap_right + hihat_right + chord_right;
+//     fn handle_chord_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+//         match event.event.as_str() {
+//             "trigger" => {
+//                 self.chord.trigger();
+//                 Ok(())
+//             }
+//             "set_gain" => {
+//                 self.chord.set_gain(event.parameter);
+//                 Ok(())
+//             }
+//             "set_base_frequency" => {
+//                 self.chord.set_base_frequency(event.parameter);
+//                 Ok(())
+//             }
+//             "set_frequency_ratio" => {
+//                 self.chord.set_frequency_ratio(event.parameter);
+//                 Ok(())
+//             }
+//             "set_modulation_index" => {
+//                 self.chord.set_modulation_index(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_attack" => {
+//                 self.chord.set_amp_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_amp_release" => {
+//                 self.chord.set_amp_release(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_attack" => {
+//                 self.chord.set_freq_attack(event.parameter);
+//                 Ok(())
+//             }
+//             "set_freq_release" => {
+//                 self.chord.set_freq_release(event.parameter);
+//                 Ok(())
+//             }
+//             _ => Err(format!("Unknown chord event: {}", event.event)),
+//         }
+//     }
 
-        (final_left * 0.7, final_right * 0.7) // Master volume
-    }
+//     fn handle_system_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+//         match event.event.as_str() {
+//             "set_bpm" => {
+//                 self.bpm = event.parameter.max(30.0).min(300.0);
+//                 self.update_clock_for_bpm();
+//                 Ok(())
+//             }
+//             "set_paused" => {
+//                 self.is_paused = event.as_bool();
+//                 Ok(())
+//             }
+//             "set_kick_steps" => {
+//                 self.kick_sequencer.set_steps(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_kick_beats" => {
+//                 self.kick_sequencer.set_beats(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_kick_tempo_mult" => {
+//                 self.kick_sequencer.set_tempo_multiplier(event.parameter);
+//                 Ok(())
+//             }
+//             "set_clap_steps" => {
+//                 self.clap_sequencer.set_steps(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_clap_beats" => {
+//                 self.clap_sequencer.set_beats(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_clap_tempo_mult" => {
+//                 self.clap_sequencer.set_tempo_multiplier(event.parameter);
+//                 Ok(())
+//             }
+//             "set_hihat_steps" => {
+//                 self.hihat_sequencer.set_steps(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_hihat_beats" => {
+//                 self.hihat_sequencer.set_beats(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_hihat_tempo_mult" => {
+//                 self.hihat_sequencer.set_tempo_multiplier(event.parameter);
+//                 Ok(())
+//             }
+//             "set_chord_steps" => {
+//                 self.chord_sequencer.set_steps(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_chord_beats" => {
+//                 self.chord_sequencer.set_beats(event.parameter as u32);
+//                 Ok(())
+//             }
+//             "set_chord_tempo_mult" => {
+//                 self.chord_sequencer.set_tempo_multiplier(event.parameter);
+//                 Ok(())
+//             }
+//             _ => Err(format!("Unknown system event: {}", event.event)),
+//         }
+//     }
+// }
 
-    fn handle_node_event(&mut self, node_name: NodeName, event: NodeEvent) -> Result<(), String> {
-        match node_name {
-            NodeName::Kick => self.kick.handle_event(event),
-            NodeName::Clap => self.clap.handle_event(event),
-            NodeName::HiHat => self.hihat.handle_event(event),
-            NodeName::Chord => self.chord.handle_event(event),
-            NodeName::System => {
-                match event {
-                    NodeEvent::SetBpm(bpm) => {
-                        self.bpm = bpm.max(30.0).min(300.0);
-                        self.update_clock_for_bpm();
-                        Ok(())
-                    }
-                    NodeEvent::SetPaused(paused) => {
-                        self.is_paused = paused;
-                        Ok(())
-                    }
-                    _ => Err(format!("Unsupported system event: {:?}", event)),
-                }
-            }
-            _ => Err(format!("Unsupported node: {:?}", node_name)),
-        }
-    }
+// impl AudioSystem for EuclideanSystem {
+//     fn next_sample(&mut self) -> (f32, f32) {
+//         if self.is_paused {
+//             return (0.0, 0.0);
+//         }
 
-    fn set_sequence(&mut self, sequence: &serde_json::Value) -> Result<(), String> {
-        // Expected JSON format:
-        // {
-        //   "kick": { "steps": 8, "beats": 3, "tempo_mult": 1.0 },
-        //   "clap": { "steps": 8, "beats": 2, "tempo_mult": 1.0 },
-        //   "hihat": { "steps": 16, "beats": 7, "tempo_mult": 2.0 },
-        //   "chord": { "steps": 8, "beats": 1, "tempo_mult": 0.5 }
-        // }
-        
-        if let Some(kick_config) = sequence.get("kick") {
-            if let (Some(steps), Some(beats), Some(tempo_mult)) = (
-                kick_config.get("steps").and_then(|v| v.as_u64()),
-                kick_config.get("beats").and_then(|v| v.as_u64()),
-                kick_config.get("tempo_mult").and_then(|v| v.as_f64()),
-            ) {
-                self.kick_sequencer.set_steps(steps as u32);
-                self.kick_sequencer.set_beats(beats as u32);
-                self.kick_sequencer.set_tempo_multiplier(tempo_mult as f32);
-            }
-        }
+//         // Tick the main clock
+//         self.clock.tick();
 
-        if let Some(clap_config) = sequence.get("clap") {
-            if let (Some(steps), Some(beats), Some(tempo_mult)) = (
-                clap_config.get("steps").and_then(|v| v.as_u64()),
-                clap_config.get("beats").and_then(|v| v.as_u64()),
-                clap_config.get("tempo_mult").and_then(|v| v.as_f64()),
-            ) {
-                self.clap_sequencer.set_steps(steps as u32);
-                self.clap_sequencer.set_beats(beats as u32);
-                self.clap_sequencer.set_tempo_multiplier(tempo_mult as f32);
-            }
-        }
+//         // Check if we've hit a step boundary (every 1/16th note)
+//         if let Some(_step) = self.main_loop.tick(&self.clock) {
+//             // Process each sequencer
 
-        if let Some(hihat_config) = sequence.get("hihat") {
-            if let (Some(steps), Some(beats), Some(tempo_mult)) = (
-                hihat_config.get("steps").and_then(|v| v.as_u64()),
-                hihat_config.get("beats").and_then(|v| v.as_u64()),
-                hihat_config.get("tempo_mult").and_then(|v| v.as_f64()),
-            ) {
-                self.hihat_sequencer.set_steps(steps as u32);
-                self.hihat_sequencer.set_beats(beats as u32);
-                self.hihat_sequencer.set_tempo_multiplier(tempo_mult as f32);
-            }
-        }
+//             // Kick
+//             if self.kick_sequencer.tick() {
+//                 self.kick.trigger();
+//             }
+//             let kick_step = self.kick_sequencer.get_current_step();
+//             if self.prev_kick_step != Some(kick_step) {
+//                 self.event_sender.send(ServerEvent::KickStepChanged(kick_step as u8));
+//                 self.prev_kick_step = Some(kick_step);
+//             }
 
-        if let Some(chord_config) = sequence.get("chord") {
-            if let (Some(steps), Some(beats), Some(tempo_mult)) = (
-                chord_config.get("steps").and_then(|v| v.as_u64()),
-                chord_config.get("beats").and_then(|v| v.as_u64()),
-                chord_config.get("tempo_mult").and_then(|v| v.as_f64()),
-            ) {
-                self.chord_sequencer.set_steps(steps as u32);
-                self.chord_sequencer.set_beats(beats as u32);
-                self.chord_sequencer.set_tempo_multiplier(tempo_mult as f32);
-            }
-        }
+//             // Clap
+//             if self.clap_sequencer.tick() {
+//                 self.clap.trigger();
+//             }
+//             let clap_step = self.clap_sequencer.get_current_step();
+//             if self.prev_clap_step != Some(clap_step) {
+//                 self.event_sender.send(ServerEvent::ClapStepChanged(clap_step as u8));
+//                 self.prev_clap_step = Some(clap_step);
+//             }
 
-        Ok(())
-    }
+//             // HiHat
+//             if self.hihat_sequencer.tick() {
+//                 self.hihat.trigger();
+//             }
+//             let hihat_step = self.hihat_sequencer.get_current_step();
+//             if self.prev_hihat_step != Some(hihat_step) {
+//                 self.prev_hihat_step = Some(hihat_step);
+//             }
 
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        self.sample_rate = sample_rate;
-        
-        // Update all audio nodes
-        AudioNode::set_sample_rate(&mut self.kick, sample_rate);
-        AudioNode::set_sample_rate(&mut self.clap, sample_rate);
-        AudioNode::set_sample_rate(&mut self.hihat, sample_rate);
-        AudioNode::set_sample_rate(&mut self.chord, sample_rate);
-        
-        // Update clock
-        self.update_clock_for_bpm();
-    }
-}
+//             // Chord
+//             if self.chord_sequencer.tick() {
+//                 self.chord.trigger();
+//             }
+//             let chord_step = self.chord_sequencer.get_current_step();
+//             if self.prev_chord_step != Some(chord_step) {
+//                 self.prev_chord_step = Some(chord_step);
+//             }
+//         }
+
+//         // Generate audio from instruments (using stereo process method)
+//         let (kick_left, kick_right) = self.kick.process(0.0, 0.0);
+//         let (clap_left, clap_right) = self.clap.process(0.0, 0.0);
+//         let (hihat_left, hihat_right) = self.hihat.process(0.0, 0.0);
+//         let (chord_left, chord_right) = self.chord.process(0.0, 0.0);
+
+//         // Mix signals
+//         let final_left = kick_left + clap_left + hihat_left + chord_left;
+//         let final_right = kick_right + clap_right + hihat_right + chord_right;
+
+//         (final_left * 0.7, final_right * 0.7) // Master volume
+//     }
+
+//     fn handle_client_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+//         match event.node.as_str() {
+//             "kick" => self.handle_kick_event(event),
+//             "clap" => self.handle_clap_event(event),
+//             "hihat" => self.handle_hihat_event(event),
+//             "chord" => self.handle_chord_event(event),
+//             "system" => self.handle_system_event(event),
+//             _ => Err(format!("Unknown node '{}' for euclidean system", event.node)),
+//         }
+//     }
+
+//     fn set_sample_rate(&mut self, sample_rate: f32) {
+//         self.sample_rate = sample_rate;
+
+//         // Update all instruments
+//         self.kick.set_sample_rate(sample_rate);
+//         self.clap.set_sample_rate(sample_rate);
+//         self.hihat.set_sample_rate(sample_rate);
+//         self.chord.set_sample_rate(sample_rate);
+
+//         // Update clock
+//         self.update_clock_for_bpm();
+//     }
+// }

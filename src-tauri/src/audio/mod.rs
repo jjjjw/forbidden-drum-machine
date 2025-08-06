@@ -28,34 +28,14 @@ pub trait StereoAudioProcessor {
     fn set_sample_rate(&mut self, sample_rate: f32);
 }
 
-/// AudioNode trait for the new event-based architecture
-/// All instruments and effects should implement this trait
-pub trait AudioNode {
-    /// Process a single stereo sample (left_in, right_in) -> (left_out, right_out)
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32);
-
-    /// Handle a typed event
-    fn handle_event(&mut self, event: crate::events::NodeEvent) -> Result<(), String>;
-
-    /// Set the sample rate
-    fn set_sample_rate(&mut self, sample_rate: f32);
-}
-
-/// AudioSystem trait for managing audio nodes and sequences
-/// Systems are configurations of audio nodes (instruments + effects) and sequencers
+/// AudioSystem trait for managing audio processing and events
+/// Systems handle all audio processing and event routing internally
 pub trait AudioSystem: Send {
     /// Process a single stereo sample and return (left, right)
     fn next_sample(&mut self) -> (f32, f32);
 
-    /// Handle an event for a specific audio node (including system events when node_name is System)
-    fn handle_node_event(
-        &mut self,
-        node_name: crate::events::NodeName,
-        event: crate::events::NodeEvent,
-    ) -> Result<(), String>;
-
-    /// Set the sequence configuration
-    fn set_sequence(&mut self, sequence_config: &serde_json::Value) -> Result<(), String>;
+    /// Handle a client event - each system parses and handles its own supported events
+    fn handle_client_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String>;
 
     /// Set the sample rate for the entire system
     fn set_sample_rate(&mut self, sample_rate: f32);

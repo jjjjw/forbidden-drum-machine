@@ -1,8 +1,7 @@
 use crate::audio::envelopes::AREnvelope;
 use crate::audio::filters::{FilterMode, SVF};
 use crate::audio::oscillators::NoiseGenerator;
-use crate::audio::{AudioGenerator, AudioNode, AudioProcessor};
-use crate::events::NodeEvent;
+use crate::audio::{AudioGenerator, AudioProcessor};
 
 pub struct HiHat {
     noise_generator: NoiseGenerator,
@@ -104,32 +103,3 @@ impl AudioGenerator for HiHat {
     }
 }
 
-impl AudioNode for HiHat {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let hihat_sample = self.next_sample() * self.gain;
-        (left_in + hihat_sample, right_in + hihat_sample)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::Trigger => {
-                self.trigger();
-                Ok(())
-            }
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetAmpRelease(time) => {
-                // Interpret amp release as length for hi-hat
-                self.set_length(time);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for HiHat: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        AudioGenerator::set_sample_rate(self, sample_rate);
-    }
-}

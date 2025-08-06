@@ -1,6 +1,6 @@
 use crate::audio::server::AudioServer;
-use crate::audio::systems::{AuditionerSystem, DrumMachineSystem, EuclideanSystem};
-use crate::commands::{AudioCommand, AudioCommandReceiver};
+use crate::audio::systems::AuditionerSystem;
+use crate::commands::{ClientCommand, ClientCommandReceiver};
 use crate::events::ServerEventSender;
 use cpal::{traits::*, Sample};
 
@@ -10,7 +10,7 @@ pub struct AudioOutput {
 
 impl AudioOutput {
     pub fn new(
-        command_receiver: AudioCommandReceiver,
+        command_receiver: ClientCommandReceiver,
         event_sender: ServerEventSender,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
@@ -23,23 +23,15 @@ impl AudioOutput {
 
         println!("Audio device sample rate: {}", sample_rate);
 
-        // Create audio server with both systems
+        // Create audio server with auditioner system only (others temporarily disabled)
         let mut audio_server = AudioServer::new(sample_rate);
-
-        // Create and add drum machine system
-        let drum_machine_system = DrumMachineSystem::new(sample_rate, event_sender.clone());
-        audio_server.add_system("drum_machine".to_string(), Box::new(drum_machine_system));
 
         // Create and add auditioner system
         let auditioner_system = AuditionerSystem::new(sample_rate);
         audio_server.add_system("auditioner".to_string(), Box::new(auditioner_system));
 
-        // Create and add euclidean system
-        let euclidean_system = EuclideanSystem::new(sample_rate, event_sender.clone());
-        audio_server.add_system("euclidean".to_string(), Box::new(euclidean_system));
-
-        // Start with drum machine as default
-        audio_server.switch_to_system("drum_machine").unwrap();
+        // Start with auditioner as default
+        audio_server.switch_to_system("auditioner").unwrap();
 
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => {
@@ -63,7 +55,7 @@ impl AudioOutput {
         device: &cpal::Device,
         config: &cpal::StreamConfig,
         audio_server: AudioServer,
-        command_receiver: AudioCommandReceiver,
+        command_receiver: ClientCommandReceiver,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         T: Sample + cpal::SizedSample + cpal::FromSample<f32>,
@@ -78,34 +70,14 @@ impl AudioOutput {
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     // Process pending commands at the start of the buffer
                     command_receiver.process_commands(|command| match command {
-                        AudioCommand::SendNodeEvent {
-                            system_name,
-                            node_name,
-                            event_name,
-                            parameter,
-                        } => {
-                            if let Err(e) = audio_server.send_node_event(
-                                &system_name,
-                                &node_name,
-                                &event_name,
-                                parameter,
-                            ) {
-                                eprintln!("Error sending node event: {}", e);
+                        ClientCommand::SendClientEvent(client_event) => {
+                            if let Err(e) = audio_server.send_client_event(&client_event) {
+                                eprintln!("Error sending client event: {}", e);
                             }
                         }
-                        AudioCommand::SwitchSystem(system_name) => {
+                        ClientCommand::SwitchSystem(system_name) => {
                             if let Err(e) = audio_server.switch_to_system(&system_name) {
                                 eprintln!("Error switching system: {}", e);
-                            }
-                        }
-                        AudioCommand::SetSequence {
-                            system_name,
-                            sequence_data,
-                        } => {
-                            if let Err(e) =
-                                audio_server.send_set_sequence(&system_name, &sequence_data)
-                            {
-                                eprintln!("Error setting sequence: {}", e);
                             }
                         }
                     });

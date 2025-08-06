@@ -1,7 +1,6 @@
 use crate::audio::envelopes::{AREEnvelope, AREnvelope};
 use crate::audio::oscillators::PMOscillator;
-use crate::audio::{AudioGenerator, AudioNode};
-use crate::events::NodeEvent;
+use crate::audio::AudioGenerator;
 
 pub struct FMVoice {
     // 4 operators with their own envelopes
@@ -175,47 +174,3 @@ impl AudioGenerator for FMVoice {
     }
 }
 
-impl AudioNode for FMVoice {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let voice_sample = self.next_sample() * self.gain;
-        (left_in + voice_sample, right_in + voice_sample)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::Trigger => {
-                self.trigger();
-                Ok(())
-            }
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            NodeEvent::SetBaseFrequency(freq) => {
-                self.set_base_frequency(freq);
-                Ok(())
-            }
-            NodeEvent::SetModulationIndex(index) => {
-                self.set_modulation_index(index);
-                Ok(())
-            }
-            NodeEvent::SetFeedback(feedback) => {
-                self.set_feedback(feedback);
-                Ok(())
-            }
-            NodeEvent::SetAmpAttack(time) => {
-                self.set_attack(time);
-                Ok(())
-            }
-            NodeEvent::SetAmpRelease(time) => {
-                self.set_release(time);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for FMVoice: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        AudioGenerator::set_sample_rate(self, sample_rate);
-    }
-}

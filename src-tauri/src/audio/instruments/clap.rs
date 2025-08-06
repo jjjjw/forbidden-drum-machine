@@ -1,8 +1,7 @@
 use crate::audio::envelopes::Segment;
 use crate::audio::filters::{FilterMode, SVF};
 use crate::audio::oscillators::NoiseGenerator;
-use crate::audio::{AudioGenerator, AudioNode, AudioProcessor};
-use crate::events::NodeEvent;
+use crate::audio::{AudioGenerator, AudioProcessor};
 
 pub struct ClapDrum {
     noise_generator: NoiseGenerator,
@@ -139,27 +138,3 @@ impl AudioGenerator for ClapDrum {
     }
 }
 
-impl AudioNode for ClapDrum {
-    fn process(&mut self, left_in: f32, right_in: f32) -> (f32, f32) {
-        let clap_sample = self.next_sample() * self.gain;
-        (left_in + clap_sample, right_in + clap_sample)
-    }
-
-    fn handle_event(&mut self, event: NodeEvent) -> Result<(), String> {
-        match event {
-            NodeEvent::Trigger => {
-                self.trigger();
-                Ok(())
-            }
-            NodeEvent::SetGain(gain) => {
-                self.set_gain(gain);
-                Ok(())
-            }
-            _ => Err(format!("Unsupported event for ClapDrum: {:?}", event)),
-        }
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f32) {
-        AudioGenerator::set_sample_rate(self, sample_rate);
-    }
-}
