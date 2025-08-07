@@ -14,7 +14,8 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "tonal": "^6.4.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.10",

@@ -1,36 +1,11 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AudioEvent, SystemName, NodeName } from "../events";
-
-const SCALES = [
-  { name: "Major", value: 0 },
-  { name: "Minor", value: 1 },
-  { name: "Dorian", value: 2 },
-  { name: "Phrygian", value: 3 },
-  { name: "Mixolydian", value: 4 },
-  { name: "Blues", value: 5 },
-];
-
-const ROOT_NOTES = [
-  { name: "C", freq: 261.63 },
-  { name: "C#", freq: 277.18 },
-  { name: "D", freq: 293.66 },
-  { name: "D#", freq: 311.13 },
-  { name: "E", freq: 329.63 },
-  { name: "F", freq: 349.23 },
-  { name: "F#", freq: 369.99 },
-  { name: "G", freq: 392.00 },
-  { name: "G#", freq: 415.30 },
-  { name: "A", freq: 440.00 },
-  { name: "A#", freq: 466.16 },
-  { name: "B", freq: 493.88 },
-];
+import { ClientEvent, SystemName, NodeName } from "../events";
+import { ChordArpControls } from "./ChordArpControls";
 
 export function TranceRiffPage(): JSX.Element {
   const [bpm, setBpm] = useState(138);
   const [isPaused, setIsPaused] = useState(false);
-  const [selectedScale, setSelectedScale] = useState(1); // Minor
-  const [selectedRootNote, setSelectedRootNote] = useState(9); // A
 
   // Synth parameters
   const [synthGain, setSynthGain] = useState(0.5);
@@ -57,7 +32,7 @@ export function TranceRiffPage(): JSX.Element {
     switchToTranceRiff();
   }, []);
 
-  const sendAudioEvent = async (nodeName: string, eventName: string, parameter: number) => {
+  const sendAudioEvent = async (nodeName: NodeName, eventName: string, parameter: number) => {
     try {
       await invoke("send_audio_event", {
         systemName: SystemName.TranceRiff,
@@ -72,29 +47,31 @@ export function TranceRiffPage(): JSX.Element {
 
   const handleBpmChange = (newBpm: number) => {
     setBpm(newBpm);
-    sendAudioEvent(NodeName.System, AudioEvent.System.SetBpm, newBpm);
+    sendAudioEvent(NodeName.System, ClientEvent.System.SetBpm, newBpm);
   };
 
   const handlePauseToggle = () => {
     const newPaused = !isPaused;
     setIsPaused(newPaused);
-    sendAudioEvent(NodeName.System, AudioEvent.System.SetPaused, newPaused ? 1 : 0);
+    sendAudioEvent(NodeName.System, ClientEvent.System.SetPaused, newPaused ? 1 : 0);
   };
 
-  const handleScaleChange = (scaleValue: number) => {
-    setSelectedScale(scaleValue);
-    sendAudioEvent(NodeName.System, AudioEvent.TranceRiff.SetScale, scaleValue);
-  };
-
-  const handleRootNoteChange = (rootNoteIndex: number) => {
-    setSelectedRootNote(rootNoteIndex);
-    const frequency = ROOT_NOTES[rootNoteIndex].freq;
-    sendAudioEvent(NodeName.System, AudioEvent.TranceRiff.SetRootNote, frequency);
+  const handleSequenceChange = async (sequence: Array<[number, number, number]>) => {
+    try {
+      await invoke("send_audio_event", {
+        systemName: SystemName.TranceRiff,
+        nodeName: NodeName.System,
+        eventName: "set_sequence",
+        data: sequence,
+      });
+    } catch (error) {
+      console.error("Error sending sequence:", error);
+    }
   };
 
   const handleSynthParameter = (eventName: string, value: number, setter: (val: number) => void) => {
     setter(value);
-    sendAudioEvent("synth", eventName, value);
+    sendAudioEvent(NodeName.Supersaw, eventName, value);
   };
 
   return (
@@ -130,39 +107,13 @@ export function TranceRiffPage(): JSX.Element {
           </div>
         </div>
 
-        {/* Musical Parameters */}
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Scale</label>
-            <select
-              value={selectedScale}
-              onChange={(e) => handleScaleChange(parseInt(e.target.value))}
-              className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-            >
-              {SCALES.map((scale) => (
-                <option key={scale.value} value={scale.value}>
-                  {scale.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Root Note</label>
-            <select
-              value={selectedRootNote}
-              onChange={(e) => handleRootNoteChange(parseInt(e.target.value))}
-              className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-            >
-              {ROOT_NOTES.map((note, index) => (
-                <option key={index} value={index}>
-                  {note.name} ({note.freq.toFixed(0)} Hz)
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
       </div>
+
+      {/* Chord Arp Controls */}
+      <ChordArpControls 
+        onSequenceChange={handleSequenceChange}
+        bpm={bpm}
+      />
 
       {/* Synth Parameters */}
       <div className="bg-gray-800 rounded-lg p-6">
@@ -185,7 +136,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={1}
                   step={0.01}
                   value={synthGain}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Common.SetGain, parseFloat(e.target.value), setSynthGain)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Common.SetGain, parseFloat(e.target.value), setSynthGain)}
                   className="w-full"
                 />
               </div>
@@ -201,7 +152,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={2}
                   step={0.01}
                   value={detune}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetDetune, parseFloat(e.target.value), setDetune)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetDetune, parseFloat(e.target.value), setDetune)}
                   className="w-full"
                 />
               </div>
@@ -217,7 +168,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={1}
                   step={0.01}
                   value={stereoWidth}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetStereoWidth, parseFloat(e.target.value), setStereoWidth)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetStereoWidth, parseFloat(e.target.value), setStereoWidth)}
                   className="w-full"
                 />
               </div>
@@ -240,7 +191,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={8000}
                   step={10}
                   value={filterCutoff}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetFilterCutoff, parseInt(e.target.value), setFilterCutoff)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterCutoff, parseInt(e.target.value), setFilterCutoff)}
                   className="w-full"
                 />
               </div>
@@ -256,7 +207,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={10}
                   step={0.1}
                   value={filterResonance}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetFilterResonance, parseFloat(e.target.value), setFilterResonance)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterResonance, parseFloat(e.target.value), setFilterResonance)}
                   className="w-full"
                 />
               </div>
@@ -272,7 +223,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={5000}
                   step={10}
                   value={filterEnvAmount}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetFilterEnvAmount, parseInt(e.target.value), setFilterEnvAmount)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterEnvAmount, parseInt(e.target.value), setFilterEnvAmount)}
                   className="w-full"
                 />
               </div>
@@ -295,7 +246,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={2}
                   step={0.001}
                   value={ampAttack}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetAmpAttack, parseFloat(e.target.value), setAmpAttack)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetAmpAttack, parseFloat(e.target.value), setAmpAttack)}
                   className="w-full"
                 />
               </div>
@@ -311,7 +262,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={10}
                   step={0.01}
                   value={ampRelease}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetAmpRelease, parseFloat(e.target.value), setAmpRelease)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetAmpRelease, parseFloat(e.target.value), setAmpRelease)}
                   className="w-full"
                 />
               </div>
@@ -334,7 +285,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={2}
                   step={0.001}
                   value={filterAttack}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetFilterAttack, parseFloat(e.target.value), setFilterAttack)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterAttack, parseFloat(e.target.value), setFilterAttack)}
                   className="w-full"
                 />
               </div>
@@ -350,7 +301,7 @@ export function TranceRiffPage(): JSX.Element {
                   max={10}
                   step={0.01}
                   value={filterRelease}
-                  onChange={(e) => handleSynthParameter(AudioEvent.Supersaw.SetFilterRelease, parseFloat(e.target.value), setFilterRelease)}
+                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterRelease, parseFloat(e.target.value), setFilterRelease)}
                   className="w-full"
                 />
               </div>
