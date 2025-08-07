@@ -198,6 +198,125 @@ const chordSynthConfig: InstrumentConfig = {
   ],
 };
 
+// Supersaw synth configuration
+const supersawConfig: InstrumentConfig = {
+  name: "Supersaw Synth",
+  color: "green",
+  triggerNode: "supersaw", 
+  parameters: [
+    {
+      name: "Gain",
+      node: "supersaw",
+      event: "set_gain",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "%",
+    },
+    {
+      name: "Base Frequency",
+      node: "supersaw",
+      event: "set_base_frequency",
+      min: 110,
+      max: 880,
+      step: 1,
+      defaultValue: 440,
+      unit: "hz",
+    },
+    {
+      name: "Detune",
+      node: "supersaw",
+      event: "set_detune",
+      min: 0,
+      max: 2,
+      step: 0.01,
+      defaultValue: 1.0,
+      unit: "x",
+    },
+    {
+      name: "Stereo Width",
+      node: "supersaw",
+      event: "set_stereo_width",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      defaultValue: 0.8,
+      unit: "%",
+    },
+    {
+      name: "Filter Cutoff",
+      node: "supersaw",
+      event: "set_filter_cutoff",
+      min: 100,
+      max: 8000,
+      step: 10,
+      defaultValue: 1000,
+      unit: "hz",
+    },
+    {
+      name: "Filter Resonance",
+      node: "supersaw",
+      event: "set_filter_resonance",
+      min: 0.1,
+      max: 10,
+      step: 0.1,
+      defaultValue: 0.7,
+      unit: "q",
+    },
+    {
+      name: "Filter Env Amount",
+      node: "supersaw",
+      event: "set_filter_env_amount",
+      min: 0,
+      max: 5000,
+      step: 10,
+      defaultValue: 2000,
+      unit: "hz",
+    },
+    {
+      name: "Amp Attack",
+      node: "supersaw",
+      event: "set_amp_attack",
+      min: 0.001,
+      max: 2,
+      step: 0.001,
+      defaultValue: 0.01,
+      unit: "s",
+    },
+    {
+      name: "Amp Release",
+      node: "supersaw",
+      event: "set_amp_release",
+      min: 0.01,
+      max: 10,
+      step: 0.01,
+      defaultValue: 0.5,
+      unit: "s",
+    },
+    {
+      name: "Filter Attack",
+      node: "supersaw",
+      event: "set_filter_attack",
+      min: 0.001,
+      max: 2,
+      step: 0.001,
+      defaultValue: 0.3,
+      unit: "s",
+    },
+    {
+      name: "Filter Release",
+      node: "supersaw",
+      event: "set_filter_release",
+      min: 0.01,
+      max: 10,
+      step: 0.01,
+      defaultValue: 0.3,
+      unit: "s",
+    },
+  ],
+};
+
 // Reverb configuration  
 const reverbConfig: InstrumentConfig = {
   name: "Reverb",
@@ -267,6 +386,7 @@ export function AuditionerPage(): JSX.Element {
       <Auditioner config={clapDrumConfig} />
       <Auditioner config={hiHatConfig} />
       <Auditioner config={chordSynthConfig} />
+      <Auditioner config={supersawConfig} />
       <Auditioner config={reverbConfig} />
     </div>
   );

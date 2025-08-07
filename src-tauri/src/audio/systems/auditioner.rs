@@ -1,6 +1,6 @@
-use crate::audio::instruments::{ChordSynth, ClapDrum, HiHat, KickDrum};
+use crate::audio::instruments::{ChordSynth, ClapDrum, HiHat, KickDrum, SupersawSynth};
 use crate::audio::reverbs::ReverbLite;
-use crate::audio::{AudioGenerator, AudioSystem, StereoAudioProcessor};
+use crate::audio::{AudioGenerator, AudioSystem, StereoAudioGenerator, StereoAudioProcessor};
 
 /// Auditioner system for testing and tweaking instruments
 /// Allows triggering individual instruments without sequencing
@@ -10,6 +10,7 @@ pub struct AuditionerSystem {
     clap: ClapDrum,
     hihat: HiHat,
     chord: ChordSynth,
+    supersaw: SupersawSynth,
     reverb: ReverbLite,
 
     // Send/return levels for reverb
@@ -26,6 +27,7 @@ impl AuditionerSystem {
             clap: ClapDrum::new(sample_rate),
             hihat: HiHat::new(sample_rate),
             chord: ChordSynth::new(sample_rate),
+            supersaw: SupersawSynth::new(sample_rate),
             reverb: ReverbLite::new(sample_rate),
             reverb_send: 0.3,   // Default 30% send to reverb
             reverb_return: 0.5, // Default 50% reverb return
@@ -145,6 +147,60 @@ impl AuditionerSystem {
         }
     }
 
+    fn handle_supersaw_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
+        match event.event.as_str() {
+            "trigger" => {
+                self.supersaw.trigger();
+                Ok(())
+            }
+            "set_gain" => {
+                self.supersaw.set_gain(event.param());
+                Ok(())
+            }
+            "set_base_frequency" => {
+                self.supersaw.set_base_frequency(event.param());
+                Ok(())
+            }
+            "set_detune" => {
+                self.supersaw.set_detune(event.param());
+                Ok(())
+            }
+            "set_stereo_width" => {
+                self.supersaw.set_stereo_width(event.param());
+                Ok(())
+            }
+            "set_filter_cutoff" => {
+                self.supersaw.set_filter_cutoff(event.param());
+                Ok(())
+            }
+            "set_filter_resonance" => {
+                self.supersaw.set_filter_resonance(event.param());
+                Ok(())
+            }
+            "set_filter_env_amount" => {
+                self.supersaw.set_filter_env_amount(event.param());
+                Ok(())
+            }
+            "set_amp_attack" => {
+                self.supersaw.set_amp_attack(event.param());
+                Ok(())
+            }
+            "set_amp_release" => {
+                self.supersaw.set_amp_release(event.param());
+                Ok(())
+            }
+            "set_filter_attack" => {
+                self.supersaw.set_filter_attack(event.param());
+                Ok(())
+            }
+            "set_filter_release" => {
+                self.supersaw.set_filter_release(event.param());
+                Ok(())
+            }
+            _ => Err(format!("Unknown supersaw event: {}", event.event)),
+        }
+    }
+
     fn handle_reverb_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
         match event.event.as_str() {
             "set_size" => {
@@ -181,6 +237,7 @@ impl AudioSystem for AuditionerSystem {
             "clap" => self.handle_clap_event(event),
             "hihat" => self.handle_hihat_event(event),
             "chord" => self.handle_chord_event(event),
+            "supersaw" => self.handle_supersaw_event(event),
             "reverb" => self.handle_reverb_event(event),
             "system" => self.handle_system_event(event),
             _ => Err(format!("Unknown node '{}' for auditioner system", event.node)),
@@ -188,16 +245,19 @@ impl AudioSystem for AuditionerSystem {
     }
 
     fn next_sample(&mut self) -> (f32, f32) {
-        // Generate samples from instruments (mono sources)
+        // Generate samples from mono instruments
         let kick_sample = self.kick.next_sample();
         let clap_sample = self.clap.next_sample();
         let hihat_sample = self.hihat.next_sample();
         let chord_sample = self.chord.next_sample();
+        
+        // Generate stereo sample from supersaw
+        let (supersaw_left, supersaw_right) = self.supersaw.next_sample();
 
-        // Mix all instruments (convert mono to stereo)
+        // Mix all instruments
         let dry_signal = (
-            kick_sample + clap_sample + hihat_sample + chord_sample,
-            kick_sample + clap_sample + hihat_sample + chord_sample,
+            kick_sample + clap_sample + hihat_sample + chord_sample + supersaw_left,
+            kick_sample + clap_sample + hihat_sample + chord_sample + supersaw_right,
         );
 
         // Send to reverb and mix with dry signal
@@ -218,6 +278,7 @@ impl AudioSystem for AuditionerSystem {
         self.clap.set_sample_rate(sample_rate);
         self.hihat.set_sample_rate(sample_rate);
         self.chord.set_sample_rate(sample_rate);
+        self.supersaw.set_sample_rate(sample_rate);
         self.reverb.set_sample_rate(sample_rate);
     }
 }

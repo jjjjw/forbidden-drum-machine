@@ -6,13 +6,23 @@ export enum CommonEvent {
 }
 
 export enum InstrumentEvent {
-  SetBaseFrequency = "instrument.set_base_frequency",
-  SetFrequencyRatio = "instrument.set_frequency_ratio",
-  SetModulationIndex = "instrument.set_modulation_index",
-  SetAmpAttack = "instrument.set_amp_attack",
-  SetAmpRelease = "instrument.set_amp_release",
-  SetFreqAttack = "instrument.set_freq_attack",
-  SetFreqRelease = "instrument.set_freq_release",
+  SetBaseFrequency = "set_base_frequency",
+  SetFrequencyRatio = "set_frequency_ratio", 
+  SetModulationIndex = "set_modulation_index",
+  SetAmpAttack = "set_amp_attack",
+  SetAmpRelease = "set_amp_release",
+  SetFreqAttack = "set_freq_attack",
+  SetFreqRelease = "set_freq_release",
+}
+
+export enum SupersawEvent {
+  SetDetune = "set_detune",
+  SetStereoWidth = "set_stereo_width",
+  SetFilterCutoff = "set_filter_cutoff",
+  SetFilterResonance = "set_filter_resonance",
+  SetFilterEnvAmount = "set_filter_env_amount",
+  SetFilterAttack = "set_filter_attack",
+  SetFilterRelease = "set_filter_release",
 }
 
 export enum DelayEvent {
@@ -55,6 +65,11 @@ export enum SystemEvent {
   SetChordTempoMult = "set_chord_tempo_mult",
 }
 
+export enum TranceRiffEvent {
+  SetRootNote = "set_root_note",
+  SetScale = "set_scale",
+}
+
 export enum SequencerEvent {
   SetSteps = "sequencer.set_steps",
   SetBeats = "sequencer.set_beats",
@@ -66,10 +81,12 @@ export enum SequencerEvent {
 export const AudioEvent = {
   Common: CommonEvent,
   Instrument: InstrumentEvent,
+  Supersaw: SupersawEvent,
   Delay: DelayEvent,
   Reverb: ReverbEvent,
   System: SystemEvent,
   Sequencer: SequencerEvent,
+  TranceRiff: TranceRiffEvent,
 } as const;
 
 // System names
@@ -77,6 +94,7 @@ export enum SystemName {
   DrumMachine = "drum_machine",
   Auditioner = "auditioner",
   Euclidean = "euclidean",
+  TranceRiff = "trance_riff",
 }
 
 // Node names
@@ -85,6 +103,7 @@ export enum NodeName {
   Clap = "clap",
   HiHat = "hihat",
   Chord = "chord",
+  Supersaw = "supersaw",
   Delay = "delay",
   Reverb = "reverb",
   System = "system",

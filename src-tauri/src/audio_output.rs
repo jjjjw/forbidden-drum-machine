@@ -1,5 +1,5 @@
 use crate::audio::server::AudioServer;
-use crate::audio::systems::AuditionerSystem;
+use crate::audio::systems::{AuditionerSystem, TranceRiffSystem};
 use crate::commands::{ClientCommand, ClientCommandReceiver};
 use crate::events::ServerEventSender;
 use cpal::{traits::*, Sample};
@@ -23,12 +23,16 @@ impl AudioOutput {
 
         println!("Audio device sample rate: {}", sample_rate);
 
-        // Create audio server with auditioner system only (others temporarily disabled)
+        // Create audio server with available systems
         let mut audio_server = AudioServer::new(sample_rate);
 
         // Create and add auditioner system
         let auditioner_system = AuditionerSystem::new(sample_rate);
         audio_server.add_system("auditioner".to_string(), Box::new(auditioner_system));
+
+        // Create and add trance riff system
+        let trance_riff_system = TranceRiffSystem::new(sample_rate);
+        audio_server.add_system("trance_riff".to_string(), Box::new(trance_riff_system));
 
         // Start with auditioner as default
         audio_server.switch_to_system("auditioner").unwrap();

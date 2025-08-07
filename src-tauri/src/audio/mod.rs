@@ -23,6 +23,11 @@ pub trait AudioProcessor {
     fn set_sample_rate(&mut self, sample_rate: f32);
 }
 
+pub trait StereoAudioGenerator {
+    fn next_sample(&mut self) -> (f32, f32);
+    fn set_sample_rate(&mut self, sample_rate: f32);
+}
+
 pub trait StereoAudioProcessor {
     fn process(&mut self, left: f32, right: f32) -> (f32, f32);
     fn set_sample_rate(&mut self, sample_rate: f32);

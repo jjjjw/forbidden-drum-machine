@@ -10,6 +10,15 @@ static SINE_TABLE: Lazy<Vec<f32>> = Lazy::new(|| {
         .collect()
 });
 
+static SAW_TABLE: Lazy<Vec<f32>> = Lazy::new(|| {
+    (0..SINE_TABLE_SIZE)
+        .map(|i| {
+            let phase = i as f32 / SINE_TABLE_SIZE as f32;
+            2.0 * phase - 1.0
+        })
+        .collect()
+});
+
 pub struct PhaseGenerator {
     phase: f32,
     phase_increment: f32,
@@ -82,6 +91,43 @@ impl AudioGenerator for SineOscillator {
         let phase = self.phase_gen.next_sample();
         let table_index = ((phase * SINE_TABLE_SIZE as f32) as usize) & SINE_TABLE_MASK;
         let sample = SINE_TABLE[table_index];
+        sample
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.set_sample_rate(sample_rate);
+    }
+}
+
+pub struct SawOscillator {
+    phase_gen: PhaseGenerator,
+}
+
+impl SawOscillator {
+    pub fn new(frequency: f32, sample_rate: f32) -> Self {
+        Self {
+            phase_gen: PhaseGenerator::new(frequency, sample_rate),
+        }
+    }
+
+    pub fn set_frequency(&mut self, frequency: f32) {
+        self.phase_gen.set_frequency(frequency);
+    }
+
+    pub fn reset(&mut self) {
+        self.phase_gen.reset();
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.phase_gen.set_sample_rate(sample_rate);
+    }
+}
+
+impl AudioGenerator for SawOscillator {
+    fn next_sample(&mut self) -> f32 {
+        let phase = self.phase_gen.next_sample();
+        let table_index = ((phase * SINE_TABLE_SIZE as f32) as usize) & SINE_TABLE_MASK;
+        let sample = SAW_TABLE[table_index];
         sample
     }
 
@@ -207,3 +253,4 @@ impl AudioGenerator for HasherNoise {
         self.set_sample_rate(sample_rate);
     }
 }
+
