@@ -105,7 +105,7 @@ impl TranceRiffSystem {
                 if let Some(data) = &event.data {
                     if let Some(sequence_data) = data.as_array() {
                         let mut sequence = Vec::new();
-                        for item in sequence_data {
+                        for item in sequence_data.iter() {
                             if let Some(note) = item.as_array() {
                                 if note.len() >= 3 {
                                     let freq = note[0].as_f64().unwrap_or(0.0) as f32;

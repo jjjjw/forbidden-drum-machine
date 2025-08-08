@@ -23,16 +23,21 @@ export function TranceRiffPage(): JSX.Element {
   useEffect(() => {
     const switchToTranceRiff = async () => {
       try {
-        await invoke("switch_audio_system", { systemName: SystemName.TranceRiff });
+        await invoke("switch_audio_system", {
+          systemName: SystemName.TranceRiff,
+        });
       } catch (error) {
-        console.error("Error switching to trance riff system:", error);
-      }
+        }
     };
-    
+
     switchToTranceRiff();
   }, []);
 
-  const sendAudioEvent = async (nodeName: NodeName, eventName: string, parameter: number) => {
+  const sendAudioEvent = async (
+    nodeName: NodeName,
+    eventName: string,
+    parameter: number,
+  ) => {
     try {
       await invoke("send_audio_event", {
         systemName: SystemName.TranceRiff,
@@ -41,7 +46,6 @@ export function TranceRiffPage(): JSX.Element {
         parameter,
       });
     } catch (error) {
-      console.error("Error sending audio event:", error);
     }
   };
 
@@ -53,23 +57,25 @@ export function TranceRiffPage(): JSX.Element {
   const handlePauseToggle = () => {
     const newPaused = !isPaused;
     setIsPaused(newPaused);
-    sendAudioEvent(NodeName.System, ClientEvent.System.SetPaused, newPaused ? 1 : 0);
+    sendAudioEvent(
+      NodeName.System,
+      ClientEvent.System.SetPaused,
+      newPaused ? 1 : 0,
+    );
   };
 
-  const handleSequenceChange = async (sequence: Array<[number, number, number]>) => {
-    try {
-      await invoke("send_audio_event", {
-        systemName: SystemName.TranceRiff,
-        nodeName: NodeName.System,
-        eventName: "set_sequence",
-        data: sequence,
-      });
-    } catch (error) {
-      console.error("Error sending sequence:", error);
-    }
+  const handleSequenceGenerated = (
+    sequence: Array<[number, number, number]>,
+  ) => {
+    // Sequence is now sent directly from ChordArpControls
   };
 
-  const handleSynthParameter = (eventName: string, value: number, setter: (val: number) => void) => {
+
+  const handleSynthParameter = (
+    eventName: string,
+    value: number,
+    setter: (val: number) => void,
+  ) => {
     setter(value);
     sendAudioEvent(NodeName.Supersaw, eventName, value);
   };
@@ -78,21 +84,23 @@ export function TranceRiffPage(): JSX.Element {
     <div className="space-y-8">
       {/* Header */}
       <div className="bg-gray-800 rounded-lg p-6">
-        <h2 className="text-2xl font-bold text-green-400 mb-4">Trance Riff Generator</h2>
-        
+        <h2 className="text-2xl font-bold text-green-400 mb-4">
+          Trance Riff Generator
+        </h2>
+
         {/* Transport Controls */}
         <div className="flex items-center gap-6 mb-6">
           <button
             onClick={handlePauseToggle}
             className={`px-6 py-2 rounded-lg font-medium ${
-              isPaused 
-                ? "bg-green-600 hover:bg-green-700 text-white" 
+              isPaused
+                ? "bg-green-600 hover:bg-green-700 text-white"
                 : "bg-red-600 hover:bg-red-700 text-white"
             }`}
           >
             {isPaused ? "▶ Play" : "⏸ Pause"}
           </button>
-          
+
           <div className="flex items-center gap-3">
             <label className="text-sm font-medium text-gray-300">BPM:</label>
             <input
@@ -106,29 +114,33 @@ export function TranceRiffPage(): JSX.Element {
             <span className="text-sm text-gray-400 w-12">{bpm}</span>
           </div>
         </div>
-
       </div>
 
       {/* Chord Arp Controls */}
-      <ChordArpControls 
-        onSequenceChange={handleSequenceChange}
+      <ChordArpControls
+        onSequenceGenerated={handleSequenceGenerated}
         bpm={bpm}
       />
 
+
       {/* Synth Parameters */}
       <div className="bg-gray-800 rounded-lg p-6">
-        <h3 className="text-xl font-bold text-green-400 mb-4">Synth Parameters</h3>
-        
+        <h3 className="text-xl font-bold text-green-400 mb-4">
+          Synth Parameters
+        </h3>
+
         <div className="grid grid-cols-2 gap-6">
           {/* Oscillator Section */}
           <div className="space-y-4">
             <h4 className="text-lg font-medium text-gray-300">Oscillator</h4>
-            
+
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Gain</label>
-                  <span className="text-sm text-gray-500">{Math.round(synthGain * 100)}%</span>
+                  <span className="text-sm text-gray-500">
+                    {Math.round(synthGain * 100)}%
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -136,15 +148,23 @@ export function TranceRiffPage(): JSX.Element {
                   max={1}
                   step={0.01}
                   value={synthGain}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Common.SetGain, parseFloat(e.target.value), setSynthGain)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Common.SetGain,
+                      parseFloat(e.target.value),
+                      setSynthGain,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Detune</label>
-                  <span className="text-sm text-gray-500">{detune.toFixed(2)}x</span>
+                  <span className="text-sm text-gray-500">
+                    {detune.toFixed(2)}x
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -152,15 +172,23 @@ export function TranceRiffPage(): JSX.Element {
                   max={2}
                   step={0.01}
                   value={detune}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetDetune, parseFloat(e.target.value), setDetune)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetDetune,
+                      parseFloat(e.target.value),
+                      setDetune,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Stereo Width</label>
-                  <span className="text-sm text-gray-500">{Math.round(stereoWidth * 100)}%</span>
+                  <span className="text-sm text-gray-500">
+                    {Math.round(stereoWidth * 100)}%
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -168,7 +196,13 @@ export function TranceRiffPage(): JSX.Element {
                   max={1}
                   step={0.01}
                   value={stereoWidth}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetStereoWidth, parseFloat(e.target.value), setStereoWidth)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetStereoWidth,
+                      parseFloat(e.target.value),
+                      setStereoWidth,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
@@ -178,12 +212,14 @@ export function TranceRiffPage(): JSX.Element {
           {/* Filter Section */}
           <div className="space-y-4">
             <h4 className="text-lg font-medium text-gray-300">Filter</h4>
-            
+
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Cutoff</label>
-                  <span className="text-sm text-gray-500">{filterCutoff} Hz</span>
+                  <span className="text-sm text-gray-500">
+                    {filterCutoff} Hz
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -191,15 +227,23 @@ export function TranceRiffPage(): JSX.Element {
                   max={8000}
                   step={10}
                   value={filterCutoff}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterCutoff, parseInt(e.target.value), setFilterCutoff)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetFilterCutoff,
+                      parseInt(e.target.value),
+                      setFilterCutoff,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Resonance</label>
-                  <span className="text-sm text-gray-500">{filterResonance.toFixed(1)}</span>
+                  <span className="text-sm text-gray-500">
+                    {filterResonance.toFixed(1)}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -207,15 +251,23 @@ export function TranceRiffPage(): JSX.Element {
                   max={10}
                   step={0.1}
                   value={filterResonance}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterResonance, parseFloat(e.target.value), setFilterResonance)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetFilterResonance,
+                      parseFloat(e.target.value),
+                      setFilterResonance,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Env Amount</label>
-                  <span className="text-sm text-gray-500">{filterEnvAmount} Hz</span>
+                  <span className="text-sm text-gray-500">
+                    {filterEnvAmount} Hz
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -223,7 +275,13 @@ export function TranceRiffPage(): JSX.Element {
                   max={5000}
                   step={10}
                   value={filterEnvAmount}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterEnvAmount, parseInt(e.target.value), setFilterEnvAmount)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetFilterEnvAmount,
+                      parseInt(e.target.value),
+                      setFilterEnvAmount,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
@@ -233,12 +291,14 @@ export function TranceRiffPage(): JSX.Element {
           {/* Amp Envelope */}
           <div className="space-y-4">
             <h4 className="text-lg font-medium text-gray-300">Amp Envelope</h4>
-            
+
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Attack</label>
-                  <span className="text-sm text-gray-500">{ampAttack.toFixed(3)}s</span>
+                  <span className="text-sm text-gray-500">
+                    {ampAttack.toFixed(3)}s
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -246,15 +306,23 @@ export function TranceRiffPage(): JSX.Element {
                   max={2}
                   step={0.001}
                   value={ampAttack}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetAmpAttack, parseFloat(e.target.value), setAmpAttack)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetAmpAttack,
+                      parseFloat(e.target.value),
+                      setAmpAttack,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Release</label>
-                  <span className="text-sm text-gray-500">{ampRelease.toFixed(2)}s</span>
+                  <span className="text-sm text-gray-500">
+                    {ampRelease.toFixed(2)}s
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -262,7 +330,13 @@ export function TranceRiffPage(): JSX.Element {
                   max={10}
                   step={0.01}
                   value={ampRelease}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetAmpRelease, parseFloat(e.target.value), setAmpRelease)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetAmpRelease,
+                      parseFloat(e.target.value),
+                      setAmpRelease,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
@@ -271,13 +345,17 @@ export function TranceRiffPage(): JSX.Element {
 
           {/* Filter Envelope */}
           <div className="space-y-4">
-            <h4 className="text-lg font-medium text-gray-300">Filter Envelope</h4>
-            
+            <h4 className="text-lg font-medium text-gray-300">
+              Filter Envelope
+            </h4>
+
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Attack</label>
-                  <span className="text-sm text-gray-500">{filterAttack.toFixed(2)}s</span>
+                  <span className="text-sm text-gray-500">
+                    {filterAttack.toFixed(2)}s
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -285,15 +363,23 @@ export function TranceRiffPage(): JSX.Element {
                   max={2}
                   step={0.001}
                   value={filterAttack}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterAttack, parseFloat(e.target.value), setFilterAttack)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetFilterAttack,
+                      parseFloat(e.target.value),
+                      setFilterAttack,
+                    )
+                  }
                   className="w-full"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between">
                   <label className="text-sm text-gray-400">Release</label>
-                  <span className="text-sm text-gray-500">{filterRelease.toFixed(2)}s</span>
+                  <span className="text-sm text-gray-500">
+                    {filterRelease.toFixed(2)}s
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -301,7 +387,13 @@ export function TranceRiffPage(): JSX.Element {
                   max={10}
                   step={0.01}
                   value={filterRelease}
-                  onChange={(e) => handleSynthParameter(ClientEvent.Supersaw.SetFilterRelease, parseFloat(e.target.value), setFilterRelease)}
+                  onChange={(e) =>
+                    handleSynthParameter(
+                      ClientEvent.Supersaw.SetFilterRelease,
+                      parseFloat(e.target.value),
+                      setFilterRelease,
+                    )
+                  }
                   className="w-full"
                 />
               </div>

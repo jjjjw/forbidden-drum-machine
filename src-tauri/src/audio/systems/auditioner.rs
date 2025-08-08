@@ -211,6 +211,10 @@ impl AuditionerSystem {
                 self.reverb.set_modulation_depth(event.param());
                 Ok(())
             }
+            "set_feedback" => {
+                self.reverb.set_feedback(event.param());
+                Ok(())
+            }
             _ => Err(format!("Unknown reverb event: {}", event.event)),
         }
     }

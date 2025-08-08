@@ -102,6 +102,7 @@ export enum DelayEvents {
 export enum ReverbEvents {
   SetSize = "set_size",
   SetModulationDepth = "set_modulation_depth",
+  SetFeedback = "set_feedback",
 }
 
 // ============================================================================

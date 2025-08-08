@@ -354,9 +354,9 @@ const reverbConfig: InstrumentConfig = {
       unit: "%",
     },
     {
-      name: "Modulation Depth",
+      name: "Feedback",
       node: "reverb",
-      event: "set_modulation_depth",
+      event: "set_feedback",
       min: 0,
       max: 1,
       step: 0.01,

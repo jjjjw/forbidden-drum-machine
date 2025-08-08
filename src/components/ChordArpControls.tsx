@@ -1,13 +1,26 @@
 import { useState, useEffect } from "react";
 import * as Tonal from "tonal";
+import { invoke } from "@tauri-apps/api/core";
+import { SystemName, NodeName, TranceRiffSystemEvents } from "../events";
 
 interface ChordArpControlsProps {
-  onSequenceChange: (sequence: Array<[number, number, number]>) => void;
+  onSequenceGenerated: (sequence: Array<[number, number, number]>) => void;
   bpm: number;
 }
 
 const ROOT_NOTES = [
-  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
 ];
 
 const CHORD_TYPES = [
@@ -30,7 +43,10 @@ const ARP_PATTERNS = [
   { name: "Random", pattern: [] }, // Will be randomized
 ];
 
-export function ChordArpControls({ onSequenceChange, bpm }: ChordArpControlsProps) {
+export function ChordArpControls({
+  onSequenceGenerated,
+  bpm,
+}: ChordArpControlsProps) {
   const [rootNote, setRootNote] = useState("A");
   const [octave, setOctave] = useState(3);
   const [chordType, setChordType] = useState("");
@@ -39,15 +55,23 @@ export function ChordArpControls({ onSequenceChange, bpm }: ChordArpControlsProp
   const [octaveDown, setOctaveDown] = useState(false);
   const [noteLength, setNoteLength] = useState(0.125); // 1/8 note
 
-  // Generate and send sequence whenever parameters change
-  useEffect(() => {
-    generateSequence();
-  }, [rootNote, octave, chordType, arpPattern, octaveUp, octaveDown, noteLength]);
+  const sendSequenceToBackend = async (sequence: Array<[number, number, number]>) => {
+    try {
+      await invoke("send_audio_event", {
+        systemName: SystemName.TranceRiff,
+        nodeName: NodeName.System,
+        eventName: TranceRiffSystemEvents.SetSequence,
+        data: sequence,
+      });
+    } catch (error) {
+      console.error("Error sending sequence:", error);
+    }
+  };
 
   const generateSequence = () => {
     // Construct chord name
-    const chordName = `${rootNote}${octave}${chordType}`;
-    
+    const chordName = `${rootNote}${chordType}`;
+
     // Get chord notes using Tonal
     const chord = Tonal.Chord.get(chordName);
     if (!chord.notes || chord.notes.length === 0) {
@@ -55,27 +79,32 @@ export function ChordArpControls({ onSequenceChange, bpm }: ChordArpControlsProp
     }
 
     // Get frequencies for chord notes
-    let notes = chord.notes.map(note => Tonal.Note.freq(note) || 440);
-    
+    let notes = chord.notes.map(
+      (note) => Tonal.Note.freq(`${note}${octave}`) || 440,
+    );
+
+
     // Apply octave modifications
     if (octaveUp) {
-      notes = notes.concat(notes.map(freq => freq * 2));
+      notes = notes.concat(notes.map((freq) => freq * 2));
     }
     if (octaveDown) {
-      notes = notes.concat(notes.map(freq => freq / 2));
+      notes = notes.concat(notes.map((freq) => freq / 2));
     }
 
     // Get pattern
-    const patternObj = ARP_PATTERNS.find(p => p.name === arpPattern);
+    const patternObj = ARP_PATTERNS.find((p) => p.name === arpPattern);
     let pattern = patternObj?.pattern || [0, 1, 2, 3];
-    
+
     // Handle random pattern
     if (arpPattern === "Random") {
-      pattern = Array.from({ length: 8 }, () => Math.floor(Math.random() * notes.length));
+      pattern = Array.from({ length: 8 }, () =>
+        Math.floor(Math.random() * notes.length),
+      );
     }
 
     // Create sequence with pattern
-    const sequence: Array<[number, number, number]> = pattern.map(index => {
+    const sequence: Array<[number, number, number]> = pattern.map((index) => {
       const noteIndex = index % notes.length;
       const frequency = notes[noteIndex];
       const duration = noteLength; // Duration in seconds
@@ -83,66 +112,85 @@ export function ChordArpControls({ onSequenceChange, bpm }: ChordArpControlsProp
       return [frequency, duration, velocity];
     });
 
-    onSequenceChange(sequence);
+    onSequenceGenerated(sequence);
+    sendSequenceToBackend(sequence);
   };
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
-      <h3 className="text-xl font-bold text-green-400 mb-4">Chord & Arpeggiator</h3>
-      
+      <h3 className="text-xl font-bold text-green-400 mb-4">
+        Chord & Arpeggiator
+      </h3>
+
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* Root Note */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Root Note</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Root Note
+          </label>
           <select
             value={rootNote}
             onChange={(e) => setRootNote(e.target.value)}
             className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
           >
-            {ROOT_NOTES.map(note => (
-              <option key={note} value={note}>{note}</option>
+            {ROOT_NOTES.map((note) => (
+              <option key={note} value={note}>
+                {note}
+              </option>
             ))}
           </select>
         </div>
 
         {/* Octave */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Octave</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Octave
+          </label>
           <select
             value={octave}
             onChange={(e) => setOctave(parseInt(e.target.value))}
             className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
           >
-            {[1, 2, 3, 4, 5, 6].map(oct => (
-              <option key={oct} value={oct}>{oct}</option>
+            {[1, 2, 3, 4, 5, 6].map((oct) => (
+              <option key={oct} value={oct}>
+                {oct}
+              </option>
             ))}
           </select>
         </div>
 
         {/* Chord Type */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Chord Type</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Chord Type
+          </label>
           <select
             value={chordType}
             onChange={(e) => setChordType(e.target.value)}
             className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
           >
-            {CHORD_TYPES.map(type => (
-              <option key={type.symbol} value={type.symbol}>{type.name}</option>
+            {CHORD_TYPES.map((type) => (
+              <option key={type.symbol} value={type.symbol}>
+                {type.name}
+              </option>
             ))}
           </select>
         </div>
 
         {/* Arp Pattern */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Arp Pattern</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Arp Pattern
+          </label>
           <select
             value={arpPattern}
             onChange={(e) => setArpPattern(e.target.value)}
             className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
           >
-            {ARP_PATTERNS.map(pattern => (
-              <option key={pattern.name} value={pattern.name}>{pattern.name}</option>
+            {ARP_PATTERNS.map((pattern) => (
+              <option key={pattern.name} value={pattern.name}>
+                {pattern.name}
+              </option>
             ))}
           </select>
         </div>
@@ -171,10 +219,12 @@ export function ChordArpControls({ onSequenceChange, bpm }: ChordArpControlsProp
       </div>
 
       {/* Note Length */}
-      <div>
+      <div className="mb-4">
         <div className="flex justify-between mb-1">
           <label className="text-sm text-gray-400">Note Length</label>
-          <span className="text-sm text-gray-500">1/{Math.round(1/noteLength)} note</span>
+          <span className="text-sm text-gray-500">
+            1/{Math.round(1 / noteLength)} note
+          </span>
         </div>
         <input
           type="range"
@@ -186,6 +236,14 @@ export function ChordArpControls({ onSequenceChange, bpm }: ChordArpControlsProp
           className="w-full"
         />
       </div>
+
+      {/* Generate & Send Button */}
+      <button
+        onClick={generateSequence}
+        className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+      >
+        Generate & Send to Synth
+      </button>
     </div>
   );
 }
