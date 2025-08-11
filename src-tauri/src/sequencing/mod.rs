@@ -1,9 +1,6 @@
 pub mod clocks;
-pub mod markov;
 pub mod euclidean;
+pub mod markov;
 pub mod tonal;
 
-pub use clocks::*;
-pub use markov::*;
-pub use euclidean::*;
 pub use tonal::*;

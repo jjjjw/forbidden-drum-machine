@@ -89,7 +89,7 @@ impl AudioGenerator for KickDrum {
         self.oscillator.set_frequency(current_freq);
 
         let sample = self.oscillator.next_sample();
-        sample * amp_env
+        sample * amp_env * self.gain
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

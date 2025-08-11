@@ -1,17 +1,23 @@
-import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { Auditioner, InstrumentConfig } from "./Auditioner";
+import { useEffect } from "react"
+import { invoke } from "@tauri-apps/api/core"
+import { Auditioner, InstrumentConfig } from "./Auditioner"
+import {
+  Auditioner as AuditionerEvents,
+  SystemNames,
+  NodeNames,
+  Commands,
+} from "../events"
 
 // Kick drum configuration
 const kickDrumConfig: InstrumentConfig = {
   name: "Kick Drum",
   color: "red",
-  triggerNode: "kick",
+  triggerNode: NodeNames.Kick,
   parameters: [
     {
       name: "Gain",
-      node: "kick",
-      event: "set_gain",
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetGain,
       min: 0,
       max: 2,
       step: 0.01,
@@ -20,8 +26,8 @@ const kickDrumConfig: InstrumentConfig = {
     },
     {
       name: "Base Frequency",
-      node: "kick",
-      event: "set_base_frequency", 
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetBaseFrequency,
       min: 20,
       max: 200,
       step: 1,
@@ -30,8 +36,8 @@ const kickDrumConfig: InstrumentConfig = {
     },
     {
       name: "Frequency Ratio",
-      node: "kick",
-      event: "set_frequency_ratio",
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetFrequencyRatio,
       min: 1,
       max: 20,
       step: 0.1,
@@ -40,57 +46,57 @@ const kickDrumConfig: InstrumentConfig = {
     },
     {
       name: "Amp Attack",
-      node: "kick",
-      event: "set_amp_attack",
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetAmpAttack,
       min: 0.001,
       max: 0.1,
       step: 0.001,
       defaultValue: 0.005,
-      unit: "ms",
+      unit: "s",
     },
     {
-      name: "Amp Release", 
-      node: "kick",
-      event: "set_amp_release",
+      name: "Amp Release",
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetAmpRelease,
       min: 0.01,
       max: 2.0,
       step: 0.01,
       defaultValue: 0.2,
-      unit: "ms",
+      unit: "s",
     },
     {
       name: "Freq Attack",
-      node: "kick",
-      event: "set_freq_attack", 
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetFreqAttack,
       min: 0.001,
       max: 0.1,
       step: 0.001,
       defaultValue: 0.002,
-      unit: "ms",
+      unit: "s",
     },
     {
       name: "Freq Release",
-      node: "kick",
-      event: "set_freq_release",
+      node: NodeNames.Kick,
+      event: AuditionerEvents.Kick.SetFreqRelease,
       min: 0.001,
       max: 0.2,
       step: 0.001,
       defaultValue: 0.05,
-      unit: "ms",
+      unit: "s",
     },
   ],
-};
+}
 
-// Clap drum configuration  
+// Clap drum configuration
 const clapDrumConfig: InstrumentConfig = {
   name: "Clap Drum",
-  color: "blue", 
-  triggerNode: "clap",
+  color: "blue",
+  triggerNode: NodeNames.Clap,
   parameters: [
     {
       name: "Gain",
-      node: "clap", 
-      event: "set_gain",
+      node: NodeNames.Clap,
+      event: AuditionerEvents.Clap.SetGain,
       min: 0,
       max: 2,
       step: 0.01,
@@ -98,18 +104,18 @@ const clapDrumConfig: InstrumentConfig = {
       unit: "%",
     },
   ],
-};
+}
 
 // Hi-hat configuration
 const hiHatConfig: InstrumentConfig = {
   name: "Hi-Hat",
   color: "yellow",
-  triggerNode: "hihat",
+  triggerNode: NodeNames.HiHat,
   parameters: [
     {
       name: "Gain",
-      node: "hihat",
-      event: "set_gain",
+      node: NodeNames.HiHat,
+      event: AuditionerEvents.HiHat.SetGain,
       min: 0,
       max: 2,
       step: 0.01,
@@ -118,8 +124,8 @@ const hiHatConfig: InstrumentConfig = {
     },
     {
       name: "Length",
-      node: "hihat", 
-      event: "set_length",
+      node: NodeNames.HiHat,
+      event: AuditionerEvents.HiHat.SetLength,
       min: 0.002,
       max: 0.5,
       step: 0.001,
@@ -127,18 +133,18 @@ const hiHatConfig: InstrumentConfig = {
       unit: "s",
     },
   ],
-};
+}
 
 // Chord synth configuration
 const chordSynthConfig: InstrumentConfig = {
   name: "Chord Synth",
   color: "purple",
-  triggerNode: "chord",
+  triggerNode: NodeNames.Chord,
   parameters: [
     {
       name: "Gain",
-      node: "chord",
-      event: "set_gain",
+      node: NodeNames.Chord,
+      event: AuditionerEvents.Chord.SetGain,
       min: 0,
       max: 1,
       step: 0.01,
@@ -147,8 +153,8 @@ const chordSynthConfig: InstrumentConfig = {
     },
     {
       name: "Base Frequency",
-      node: "chord",
-      event: "set_base_frequency",
+      node: NodeNames.Chord,
+      event: AuditionerEvents.Chord.SetBaseFrequency,
       min: 110,
       max: 440,
       step: 1,
@@ -157,8 +163,8 @@ const chordSynthConfig: InstrumentConfig = {
     },
     {
       name: "Modulation Index",
-      node: "chord",
-      event: "set_modulation_index",
+      node: NodeNames.Chord,
+      event: AuditionerEvents.Chord.SetModulationIndex,
       min: 0,
       max: 2,
       step: 0.01,
@@ -167,8 +173,8 @@ const chordSynthConfig: InstrumentConfig = {
     },
     {
       name: "Feedback",
-      node: "chord",
-      event: "set_feedback",
+      node: NodeNames.Chord,
+      event: AuditionerEvents.Chord.SetFeedback,
       min: 0,
       max: 0.99,
       step: 0.01,
@@ -177,8 +183,8 @@ const chordSynthConfig: InstrumentConfig = {
     },
     {
       name: "Attack",
-      node: "chord",
-      event: "set_attack",
+      node: NodeNames.Chord,
+      event: AuditionerEvents.Chord.SetAttack,
       min: 0.01,
       max: 2,
       step: 0.01,
@@ -187,8 +193,8 @@ const chordSynthConfig: InstrumentConfig = {
     },
     {
       name: "Release",
-      node: "chord",
-      event: "set_release",
+      node: NodeNames.Chord,
+      event: AuditionerEvents.Chord.SetRelease,
       min: 0.1,
       max: 8,
       step: 0.1,
@@ -196,18 +202,18 @@ const chordSynthConfig: InstrumentConfig = {
       unit: "s",
     },
   ],
-};
+}
 
 // Supersaw synth configuration
 const supersawConfig: InstrumentConfig = {
   name: "Supersaw Synth",
   color: "green",
-  triggerNode: "supersaw", 
+  triggerNode: NodeNames.Supersaw,
   parameters: [
     {
       name: "Gain",
-      node: "supersaw",
-      event: "set_gain",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetGain,
       min: 0,
       max: 1,
       step: 0.01,
@@ -216,8 +222,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Base Frequency",
-      node: "supersaw",
-      event: "set_base_frequency",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetBaseFrequency,
       min: 110,
       max: 880,
       step: 1,
@@ -226,8 +232,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Detune",
-      node: "supersaw",
-      event: "set_detune",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetDetune,
       min: 0,
       max: 2,
       step: 0.01,
@@ -236,8 +242,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Stereo Width",
-      node: "supersaw",
-      event: "set_stereo_width",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetStereoWidth,
       min: 0,
       max: 1,
       step: 0.01,
@@ -246,8 +252,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Filter Cutoff",
-      node: "supersaw",
-      event: "set_filter_cutoff",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetFilterCutoff,
       min: 100,
       max: 8000,
       step: 10,
@@ -256,8 +262,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Filter Resonance",
-      node: "supersaw",
-      event: "set_filter_resonance",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetFilterResonance,
       min: 0.1,
       max: 10,
       step: 0.1,
@@ -266,8 +272,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Filter Env Amount",
-      node: "supersaw",
-      event: "set_filter_env_amount",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetFilterEnvAmount,
       min: 0,
       max: 5000,
       step: 10,
@@ -276,8 +282,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Amp Attack",
-      node: "supersaw",
-      event: "set_amp_attack",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetAmpAttack,
       min: 0.001,
       max: 2,
       step: 0.001,
@@ -286,8 +292,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Amp Release",
-      node: "supersaw",
-      event: "set_amp_release",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetAmpRelease,
       min: 0.01,
       max: 10,
       step: 0.01,
@@ -296,8 +302,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Filter Attack",
-      node: "supersaw",
-      event: "set_filter_attack",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetFilterAttack,
       min: 0.001,
       max: 2,
       step: 0.001,
@@ -306,8 +312,8 @@ const supersawConfig: InstrumentConfig = {
     },
     {
       name: "Filter Release",
-      node: "supersaw",
-      event: "set_filter_release",
+      node: NodeNames.Supersaw,
+      event: AuditionerEvents.Supersaw.SetFilterRelease,
       min: 0.01,
       max: 10,
       step: 0.01,
@@ -315,18 +321,18 @@ const supersawConfig: InstrumentConfig = {
       unit: "s",
     },
   ],
-};
+}
 
-// Reverb configuration  
+// Reverb configuration
 const reverbConfig: InstrumentConfig = {
   name: "Reverb",
-  color: "teal", 
+  color: "teal",
   triggerNode: null, // No trigger for reverb
   parameters: [
     {
       name: "Send",
-      node: "system",
-      event: "set_reverb_send",
+      node: NodeNames.System,
+      event: AuditionerEvents.System.SetReverbSend,
       min: 0,
       max: 1,
       step: 0.01,
@@ -335,8 +341,8 @@ const reverbConfig: InstrumentConfig = {
     },
     {
       name: "Return",
-      node: "system", 
-      event: "set_reverb_return",
+      node: NodeNames.System,
+      event: AuditionerEvents.System.SetReverbReturn,
       min: 0,
       max: 1,
       step: 0.01,
@@ -345,8 +351,8 @@ const reverbConfig: InstrumentConfig = {
     },
     {
       name: "Size",
-      node: "reverb",
-      event: "set_size",
+      node: NodeNames.Reverb,
+      event: AuditionerEvents.Reverb.SetSize,
       min: 0,
       max: 1,
       step: 0.01,
@@ -355,8 +361,8 @@ const reverbConfig: InstrumentConfig = {
     },
     {
       name: "Feedback",
-      node: "reverb",
-      event: "set_feedback",
+      node: NodeNames.Reverb,
+      event: AuditionerEvents.Reverb.SetFeedback,
       min: 0,
       max: 1,
       step: 0.01,
@@ -364,21 +370,23 @@ const reverbConfig: InstrumentConfig = {
       unit: "%",
     },
   ],
-};
+}
 
 export function AuditionerPage(): JSX.Element {
   // Switch to auditioner system when this page loads
   useEffect(() => {
     const switchToAuditioner = async () => {
       try {
-        await invoke("switch_audio_system", { systemName: "auditioner" });
+        await invoke(Commands.SwitchAudioSystem, {
+          systemName: SystemNames.Auditioner,
+        })
       } catch (error) {
-        console.error("Error switching to auditioner system:", error);
+        console.error("Error switching to auditioner system:", error)
       }
-    };
-    
-    switchToAuditioner();
-  }, []);
+    }
+
+    switchToAuditioner()
+  }, [])
 
   return (
     <div className="space-y-8">
@@ -389,5 +397,5 @@ export function AuditionerPage(): JSX.Element {
       <Auditioner config={supersawConfig} />
       <Auditioner config={reverbConfig} />
     </div>
-  );
+  )
 }

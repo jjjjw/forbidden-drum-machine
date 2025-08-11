@@ -30,7 +30,7 @@ fn start_event_emitter(
             event_receiver.process_events(|event| {
                 // Create event name from system.node.event
                 let event_name = format!("{}_{}_{}", event.system, event.node, event.event);
-                
+
                 // Create payload with all event data
                 let payload = serde_json::json!({
                     "system": event.system,
@@ -39,7 +39,7 @@ fn start_event_emitter(
                     "parameter": event.parameter,
                     "data": event.data
                 });
-                
+
                 let _ = app_handle.emit(&event_name, payload);
             });
 
@@ -82,7 +82,7 @@ fn start_cpu_monitor(app_handle: tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn send_audio_event(
+fn send_client_event(
     system_name: String,
     node_name: String,
     event_name: String,
@@ -92,7 +92,7 @@ fn send_audio_event(
 ) -> Result<(), String> {
     let app_state = state.lock().unwrap();
     let sender = app_state.command_queue.sender();
-    
+
     let client_event = crate::events::ClientEvent {
         system: system_name,
         node: node_name,
@@ -100,7 +100,7 @@ fn send_audio_event(
         parameter,
         data,
     };
-    
+
     sender.send(ClientCommand::SendClientEvent(client_event));
     Ok(())
 }
@@ -139,7 +139,7 @@ pub fn run() -> ExitCode {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            send_audio_event,
+            send_client_event,
             switch_audio_system
         ])
         .setup(move |app| {

@@ -1,16 +1,16 @@
-import { useState } from "react";
-import { AuditionerPage } from "./components/AuditionerPage";
-import { TranceRiffPage } from "./components/TranceRiffPage";
-import "./App.css";
+import { useState } from "react"
+import { AuditionerPage } from "./components/AuditionerPage"
+import { TranceRiffPage } from "./components/TranceRiffPage"
+import "./App.css"
 
-type SystemTab = "auditioner" | "tranceriff";
+type SystemTab = "auditioner" | "tranceriff"
 
 function App() {
-  const [activeTab, setActiveTab] = useState<SystemTab>("auditioner");
+  const [activeTab, setActiveTab] = useState<SystemTab>("auditioner")
 
   const handleTabChange = (tab: SystemTab) => {
-    setActiveTab(tab);
-  };
+    setActiveTab(tab)
+  }
 
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8 font-mono">
@@ -19,7 +19,7 @@ function App() {
           <h1 className="text-lg text-neutral-300 mb-6">
             Forbidden Drum Machine
           </h1>
-          
+
           {/* Tab Navigation */}
           <div className="flex space-x-4 mb-6">
             <button
@@ -50,7 +50,7 @@ function App() {
         {activeTab === "tranceriff" && <TranceRiffPage />}
       </div>
     </main>
-  );
+  )
 }
 
-export default App;
+export default App

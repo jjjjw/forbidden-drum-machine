@@ -91,7 +91,7 @@ impl AudioGenerator for HiHat {
 
         // Apply envelope
         let amp_env = self.amp_envelope.next_sample();
-        saturated * amp_env
+        saturated * amp_env * self.gain
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
-import * as Tonal from "tonal";
-import { invoke } from "@tauri-apps/api/core";
-import { SystemName, NodeName, TranceRiffSystemEvents } from "../events";
+import { useState } from "react"
+import * as Tonal from "tonal"
+import { invoke } from "@tauri-apps/api/core"
+import { TranceRiff, SystemNames, NodeNames, Commands } from "../events"
 
 interface ChordArpControlsProps {
-  onSequenceGenerated: (sequence: Array<[number, number, number]>) => void;
-  bpm: number;
+  onSequenceGenerated: (sequence: Array<[number, number, number]>) => void
+  bpm?: number // Optional since it's not used
 }
 
 const ROOT_NOTES = [
@@ -21,7 +21,7 @@ const ROOT_NOTES = [
   "A",
   "A#",
   "B",
-];
+]
 
 const CHORD_TYPES = [
   { name: "Major", symbol: "" },
@@ -33,7 +33,7 @@ const CHORD_TYPES = [
   { name: "Sus4", symbol: "sus4" },
   { name: "Diminished", symbol: "dim" },
   { name: "Augmented", symbol: "aug" },
-];
+]
 
 const ARP_PATTERNS = [
   { name: "Up", pattern: [0, 1, 2, 3] },
@@ -41,80 +41,85 @@ const ARP_PATTERNS = [
   { name: "Up-Down", pattern: [0, 1, 2, 3, 3, 2, 1, 0] },
   { name: "Down-Up", pattern: [3, 2, 1, 0, 0, 1, 2, 3] },
   { name: "Random", pattern: [] }, // Will be randomized
-];
+]
 
 export function ChordArpControls({
   onSequenceGenerated,
-  bpm,
+  bpm: _bpm, // Renamed to indicate it's unused
 }: ChordArpControlsProps) {
-  const [rootNote, setRootNote] = useState("A");
-  const [octave, setOctave] = useState(3);
-  const [chordType, setChordType] = useState("");
-  const [arpPattern, setArpPattern] = useState("Up");
-  const [octaveUp, setOctaveUp] = useState(false);
-  const [octaveDown, setOctaveDown] = useState(false);
-  const [noteLength, setNoteLength] = useState(0.125); // 1/8 note
+  const [rootNote, setRootNote] = useState("A")
+  const [octave, setOctave] = useState(3)
+  const [chordType, setChordType] = useState("")
+  const [arpPattern, setArpPattern] = useState("Up")
+  const [octaveUp, setOctaveUp] = useState(false)
+  const [octaveDown, setOctaveDown] = useState(false)
+  const [noteLength, setNoteLength] = useState(0.125) // 1/8 note
 
-  const sendSequenceToBackend = async (sequence: Array<[number, number, number]>) => {
+  const sendSequenceToBackend = async (
+    sequence: Array<[number, number, number]>
+  ) => {
     try {
-      await invoke("send_audio_event", {
-        systemName: SystemName.TranceRiff,
-        nodeName: NodeName.System,
-        eventName: TranceRiffSystemEvents.SetSequence,
+      await invoke(Commands.SendClientEvent, {
+        systemName: SystemNames.TranceRiff,
+        nodeName: NodeNames.System,
+        eventName: TranceRiff.System.SetSequence,
         data: sequence,
-      });
+      })
     } catch (error) {
-      console.error("Error sending sequence:", error);
+      console.error("Error sending sequence:", error)
     }
-  };
+  }
 
   const generateSequence = () => {
     // Construct chord name
-    const chordName = `${rootNote}${chordType}`;
+    const chordName = `${rootNote}${chordType}`
 
     // Get chord notes using Tonal
-    const chord = Tonal.Chord.get(chordName);
+    const chord = Tonal.Chord.get(chordName)
     if (!chord.notes || chord.notes.length === 0) {
-      return;
+      return
     }
 
     // Get frequencies for chord notes
     let notes = chord.notes.map(
-      (note) => Tonal.Note.freq(`${note}${octave}`) || 440,
-    );
-
+      (note) => Tonal.Note.freq(`${note}${octave}`) || 440
+    )
 
     // Apply octave modifications
     if (octaveUp) {
-      notes = notes.concat(notes.map((freq) => freq * 2));
+      notes = notes.concat(notes.map((freq) => freq * 2))
     }
     if (octaveDown) {
-      notes = notes.concat(notes.map((freq) => freq / 2));
+      notes = notes.concat(notes.map((freq) => freq / 2))
     }
 
     // Get pattern
-    const patternObj = ARP_PATTERNS.find((p) => p.name === arpPattern);
-    let pattern = patternObj?.pattern || [0, 1, 2, 3];
+    const patternObj = ARP_PATTERNS.find((p) => p.name === arpPattern)
+    let pattern = patternObj?.pattern || [0, 1, 2, 3]
 
     // Handle random pattern
     if (arpPattern === "Random") {
       pattern = Array.from({ length: 8 }, () =>
-        Math.floor(Math.random() * notes.length),
-      );
+        Math.floor(Math.random() * notes.length)
+      )
     }
 
     // Create sequence with pattern
     const sequence: Array<[number, number, number]> = pattern.map((index) => {
-      const noteIndex = index % notes.length;
-      const frequency = notes[noteIndex];
-      const duration = noteLength; // Duration in seconds
-      const velocity = 0.7; // Default velocity
-      return [frequency, duration, velocity];
-    });
+      const noteIndex = index % notes.length
+      const frequency = notes[noteIndex]
+      // Convert note length to tatums (8 tatums per beat, 1 whole note = 4 beats)
+      // noteLength is fraction of whole note: 0.125 = 1/8 note = 0.5 beats = 4 tatums
+      const duration = Math.max(1, Math.round(noteLength * 4 * 8)) // noteLength * beats_per_whole_note * tatums_per_beat
+      const velocity = 0.7 // Default velocity
+      return [frequency, duration, velocity]
+    })
 
-    onSequenceGenerated(sequence);
-    sendSequenceToBackend(sequence);
-  };
+    console.log(sequence)
+
+    onSequenceGenerated(sequence)
+    sendSequenceToBackend(sequence)
+  }
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
@@ -228,9 +233,9 @@ export function ChordArpControls({
         </div>
         <input
           type="range"
-          min={0.0625}
+          min={0.03125}
           max={0.5}
-          step={0.0625}
+          step={0.03125}
           value={noteLength}
           onChange={(e) => setNoteLength(parseFloat(e.target.value))}
           className="w-full"
@@ -245,5 +250,5 @@ export function ChordArpControls({
         Generate & Send to Synth
       </button>
     </div>
-  );
+  )
 }

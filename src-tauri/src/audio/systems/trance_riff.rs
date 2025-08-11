@@ -1,12 +1,12 @@
 use crate::audio::instruments::SupersawSynth;
 use crate::audio::{AudioSystem, StereoAudioGenerator};
-use crate::sequencing::TonalSequencer;
+use crate::sequencing::{TonalSequencer, TatumClock};
 
 /// Main TranceRiff system using TonalSequencer
 pub struct TranceRiffSystem {
     synth: SupersawSynth,
     sequencer: TonalSequencer,
-    bpm: f32,
+    tatum_clock: TatumClock,
     is_paused: bool,
     sample_rate: f32,
 }
@@ -14,25 +14,27 @@ pub struct TranceRiffSystem {
 impl TranceRiffSystem {
     pub fn new(sample_rate: f32) -> Self {
         let bpm = 138.0; // Classic trance BPM
+        let mut tatum_clock = TatumClock::new(sample_rate);
+        tatum_clock.set_bpm(bpm);
         
         Self {
             synth: SupersawSynth::new(sample_rate),
-            sequencer: TonalSequencer::new(sample_rate),
-            bpm,
+            sequencer: TonalSequencer::new(),
+            tatum_clock,
             is_paused: false,
             sample_rate,
         }
     }
     
     pub fn set_bpm(&mut self, bpm: f32) {
-        self.bpm = bpm.clamp(60.0, 200.0);
+        self.tatum_clock.set_bpm(bpm);
     }
     
     pub fn set_paused(&mut self, paused: bool) {
         self.is_paused = paused;
     }
     
-    pub fn set_sequence(&mut self, sequence: Vec<(f32, f32, f32)>) {
+    pub fn set_sequence(&mut self, sequence: Vec<(f32, u32, f32)>) {
         self.sequencer.set_sequence(sequence);
     }
     
@@ -109,9 +111,9 @@ impl TranceRiffSystem {
                             if let Some(note) = item.as_array() {
                                 if note.len() >= 3 {
                                     let freq = note[0].as_f64().unwrap_or(0.0) as f32;
-                                    let duration = note[1].as_f64().unwrap_or(0.0) as f32;
+                                    let duration_tatums = note[1].as_f64().unwrap_or(0.0) as u32;
                                     let velocity = note[2].as_f64().unwrap_or(1.0) as f32;
-                                    sequence.push((freq, duration, velocity));
+                                    sequence.push((freq, duration_tatums, velocity));
                                 }
                             }
                         }
@@ -135,14 +137,19 @@ impl AudioSystem for TranceRiffSystem {
             return (0.0, 0.0);
         }
         
-        // Tick the sequencer
-        let (should_trigger, frequency, velocity) = self.sequencer.tick();
+        // Check for new tatum from the master clock
+        let is_new_tatum = self.tatum_clock.tick();
         
-        // Trigger new notes when needed
-        if should_trigger && frequency > 0.0 {
-            self.synth.set_base_frequency(frequency);
-            self.synth.set_gain(velocity);
-            self.synth.trigger();
+        if is_new_tatum {
+            // Process tatum event in sequencer
+            let (should_trigger, frequency, velocity) = self.sequencer.on_tatum();
+            
+            // Trigger new notes when needed
+            if should_trigger && frequency > 0.0 {
+                self.synth.set_base_frequency(frequency);
+                self.synth.set_gain(velocity);
+                self.synth.trigger();
+            }
         }
         
         // Generate audio sample
@@ -160,6 +167,6 @@ impl AudioSystem for TranceRiffSystem {
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.synth.set_sample_rate(sample_rate);
-        self.sequencer.set_sample_rate(sample_rate);
+        self.tatum_clock.set_sample_rate(sample_rate);
     }
 }

@@ -1,13 +1,14 @@
-import React from "react";
-import { invoke } from "@tauri-apps/api/core";
+import React from "react"
+import { invoke } from "@tauri-apps/api/core"
+import { NodeNames, TranceRiff, Commands } from "../events"
 
 interface TransportControlsProps {
-  systemName: string;
-  isPaused: boolean;
-  bpm: number;
-  onPausedChange: (paused: boolean) => void;
-  onBpmChange: (bpm: number) => void;
-  sliderWidth?: string;
+  systemName: string
+  isPaused: boolean
+  bpm: number
+  onPausedChange: (paused: boolean) => void
+  onBpmChange: (bpm: number) => void
+  sliderWidth?: string
 }
 
 export const TransportControls: React.FC<TransportControlsProps> = ({
@@ -20,32 +21,31 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
 }) => {
   const handlePlayPause = async () => {
     try {
-      await invoke("send_audio_event", {
+      await invoke(Commands.SendClientEvent, {
         systemName,
-        nodeName: "system",
-        eventName: "set_paused",
+        nodeName: NodeNames.System,
+        eventName: TranceRiff.System.SetPaused,
         parameter: isPaused ? 0.0 : 1.0,
-      });
-      onPausedChange(!isPaused);
+      })
+      onPausedChange(!isPaused)
     } catch (error) {
-      console.error("Failed to toggle playback:", error);
+      console.error("Failed to toggle playback:", error)
     }
-  };
-
+  }
 
   const handleBpmChange = async (newBpm: number) => {
     try {
-      await invoke("send_audio_event", {
+      await invoke(Commands.SendClientEvent, {
         systemName,
-        nodeName: "system",
-        eventName: "set_bpm",
+        nodeName: NodeNames.System,
+        eventName: TranceRiff.System.SetBpm,
         parameter: newBpm,
-      });
-      onBpmChange(newBpm);
+      })
+      onBpmChange(newBpm)
     } catch (error) {
-      console.error("Failed to update BPM:", error);
+      console.error("Failed to update BPM:", error)
     }
-  };
+  }
 
   return (
     <div className="flex items-center gap-4">
@@ -73,5 +73,5 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
         <span className="text-sm w-8">{bpm}</span>
       </div>
     </div>
-  );
-};
+  )
+}

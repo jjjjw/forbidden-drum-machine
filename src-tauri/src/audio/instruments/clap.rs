@@ -121,7 +121,7 @@ impl AudioGenerator for ClapDrum {
         let filtered_sum = (filtered_1320 + filtered_1100 + filtered_1420) * 3.16;
 
         // Apply envelope and tanh saturation
-        (filtered_sum * self.envelope_value).tanh()
+        (filtered_sum * self.envelope_value).tanh() * self.gain
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

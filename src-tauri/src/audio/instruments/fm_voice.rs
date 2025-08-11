@@ -162,7 +162,7 @@ impl AudioGenerator for FMVoice {
         let op0_out = self.operators[0].next_sample_with_pm(op0_pm) * op_envs[0];
 
         // Output is op0 with amplitude envelope
-        op0_out * amp_env
+        op0_out * amp_env * self.gain
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

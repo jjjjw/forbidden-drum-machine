@@ -1,0 +1,17 @@
+# Dependencies
+node_modules
+
+# Production builds
+dist
+build
+
+# Tauri builds
+src-tauri/target
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Generated files
+*.log

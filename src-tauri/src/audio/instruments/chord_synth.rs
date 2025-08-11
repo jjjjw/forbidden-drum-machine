@@ -103,8 +103,8 @@ impl AudioGenerator for ChordSynth {
             output += voice.next_sample();
         }
 
-        // Mix down the voices
-        output * 0.2 // Divide by 5 for equal mixing
+        // Mix down the voices and apply gain
+        output * 0.2 * self.gain // Divide by 5 for equal mixing
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
