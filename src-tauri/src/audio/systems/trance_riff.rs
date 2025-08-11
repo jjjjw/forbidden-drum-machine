@@ -1,12 +1,12 @@
 use crate::audio::instruments::SupersawSynth;
 use crate::audio::{AudioSystem, StereoAudioGenerator};
-use crate::sequencing::{TonalSequencer, TatumClock};
+use crate::sequencing::{PPQNClock, TonalSequencer};
 
 /// Main TranceRiff system using TonalSequencer
 pub struct TranceRiffSystem {
     synth: SupersawSynth,
     sequencer: TonalSequencer,
-    tatum_clock: TatumClock,
+    ppqn_clock: PPQNClock,
     is_paused: bool,
     sample_rate: f32,
 }
@@ -14,30 +14,30 @@ pub struct TranceRiffSystem {
 impl TranceRiffSystem {
     pub fn new(sample_rate: f32) -> Self {
         let bpm = 138.0; // Classic trance BPM
-        let mut tatum_clock = TatumClock::new(sample_rate);
-        tatum_clock.set_bpm(bpm);
-        
+        let mut ppqn_clock = PPQNClock::new(sample_rate);
+        ppqn_clock.set_bpm(bpm);
+
         Self {
             synth: SupersawSynth::new(sample_rate),
             sequencer: TonalSequencer::new(),
-            tatum_clock,
+            ppqn_clock,
             is_paused: false,
             sample_rate,
         }
     }
-    
+
     pub fn set_bpm(&mut self, bpm: f32) {
-        self.tatum_clock.set_bpm(bpm);
+        self.ppqn_clock.set_bpm(bpm);
     }
-    
+
     pub fn set_paused(&mut self, paused: bool) {
         self.is_paused = paused;
     }
-    
+
     pub fn set_sequence(&mut self, sequence: Vec<(f32, u32, f32)>) {
         self.sequencer.set_sequence(sequence);
     }
-    
+
     fn handle_synth_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
         match event.event.as_str() {
             "trigger" => {
@@ -91,7 +91,7 @@ impl TranceRiffSystem {
             _ => Err(format!("Unknown synth event: {}", event.event)),
         }
     }
-    
+
     fn handle_system_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
         match event.event.as_str() {
             "set_bpm" => {
@@ -111,9 +111,9 @@ impl TranceRiffSystem {
                             if let Some(note) = item.as_array() {
                                 if note.len() >= 3 {
                                     let freq = note[0].as_f64().unwrap_or(0.0) as f32;
-                                    let duration_tatums = note[1].as_f64().unwrap_or(0.0) as u32;
+                                    let duration_pulses = note[1].as_f64().unwrap_or(0.0) as u32;
                                     let velocity = note[2].as_f64().unwrap_or(1.0) as f32;
-                                    sequence.push((freq, duration_tatums, velocity));
+                                    sequence.push((freq, duration_pulses, velocity));
                                 }
                             }
                         }
@@ -136,37 +136,39 @@ impl AudioSystem for TranceRiffSystem {
         if self.is_paused {
             return (0.0, 0.0);
         }
-        
-        // Check for new tatum from the master clock
-        let is_new_tatum = self.tatum_clock.tick();
-        
-        if is_new_tatum {
-            // Process tatum event in sequencer
-            let (should_trigger, frequency, velocity) = self.sequencer.on_tatum();
-            
+
+        // Check for new pulse from the master clock
+        let is_new_pulse = self.ppqn_clock.tick();
+
+        if is_new_pulse {
+            // Process pulse event in sequencer
+            let (should_trigger, frequency, velocity) = self.sequencer.on_pulse();
+
             // Trigger new notes when needed
             if should_trigger && frequency > 0.0 {
                 self.synth.set_base_frequency(frequency);
-                self.synth.set_gain(velocity);
                 self.synth.trigger();
             }
         }
-        
+
         // Generate audio sample
         self.synth.next_sample()
     }
-    
+
     fn handle_client_event(&mut self, event: &crate::events::ClientEvent) -> Result<(), String> {
         match event.node.as_str() {
             "supersaw" => self.handle_synth_event(event),
             "system" => self.handle_system_event(event),
-            _ => Err(format!("Unknown node '{}' for trance riff system", event.node)),
+            _ => Err(format!(
+                "Unknown node '{}' for trance riff system",
+                event.node
+            )),
         }
     }
-    
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.synth.set_sample_rate(sample_rate);
-        self.tatum_clock.set_sample_rate(sample_rate);
+        self.ppqn_clock.set_sample_rate(sample_rate);
     }
 }

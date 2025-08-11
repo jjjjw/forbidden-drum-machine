@@ -166,7 +166,8 @@ impl AREnvelope {
 
     pub fn trigger(&mut self) {
         self.state = AREnvelopeState::Attack;
-        self.current_level = 0.0;
+        // Start attack from current level to avoid pops
+        self.attack_segment.set_start_value(self.current_level);
         self.attack_segment.trigger();
     }
 
@@ -257,7 +258,8 @@ impl AREEnvelope {
 
     pub fn trigger(&mut self) {
         self.state = AREnvelopeState::Attack;
-        self.current_level = 0.0;
+        // Start attack from current level to avoid pops
+        self.attack_segment.set_start_value(self.current_level);
         self.attack_segment.trigger();
     }
 

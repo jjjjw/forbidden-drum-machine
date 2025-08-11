@@ -69,10 +69,6 @@ impl SupersawOscillator {
         }
     }
 
-    pub fn set_gain(&mut self, gain: f32) {
-        self.gain = gain / self.num_voices as f32;
-    }
-
     pub fn reset(&mut self) {
         for osc in &mut self.oscillators {
             osc.reset();
@@ -161,7 +157,9 @@ impl SupersawSynth {
     }
 
     pub fn trigger(&mut self) {
-        self.oscillator.reset();
+        if !self.amp_envelope.is_active() {
+            self.oscillator.reset();
+        }
         self.amp_envelope.trigger();
         self.filter_envelope.trigger();
     }
@@ -247,7 +245,7 @@ impl StereoAudioGenerator for SupersawSynth {
         let final_left = filtered_left * amp_env * self.gain;
         let final_right = filtered_right * amp_env * self.gain;
 
-        (final_left, final_right)
+        (final_left.tanh(), final_right.tanh())
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

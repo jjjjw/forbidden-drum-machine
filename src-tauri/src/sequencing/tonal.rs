@@ -1,19 +1,19 @@
-/// Tatum clock that provides timing signals for all sequencers
-pub struct TatumClock {
+/// Clock that provides timing signals for all sequencers using PPQN (Pulses Per Quarter Note)
+pub struct PPQNClock {
     bpm: f32,
-    tatums_per_beat: u32,
+    ppqn: u32, // Pulses Per Quarter Note
     sample_rate: f32,
-    samples_per_tatum: u32,
+    samples_per_pulse: u32,
     sample_counter: u32,
 }
 
-impl TatumClock {
+impl PPQNClock {
     pub fn new(sample_rate: f32) -> Self {
         let mut clock = Self {
             bpm: 120.0,
-            tatums_per_beat: 8, // 8 tatums per beat = 32nd note resolution
+            ppqn: 8, // 8 pulses per quarter note = 32nd note resolution
             sample_rate,
-            samples_per_tatum: 0,
+            samples_per_pulse: 0,
             sample_counter: 0,
         };
         clock.recalculate_timing();
@@ -31,18 +31,16 @@ impl TatumClock {
     }
 
     fn recalculate_timing(&mut self) {
-        let calculated = ((60.0 * self.sample_rate) / (self.bpm * self.tatums_per_beat as f32)) as u32;
-        // Ensure we never get 0 samples per tatum
-        self.samples_per_tatum = calculated.max(1);
-        println!("TatumClock: BPM={}, sample_rate={}, tatums_per_beat={}, samples_per_tatum={}", 
-                 self.bpm, self.sample_rate, self.tatums_per_beat, self.samples_per_tatum);
+        let calculated = ((60.0 * self.sample_rate) / (self.bpm * self.ppqn as f32)) as u32;
+        // Ensure we never get 0 samples per pulse
+        self.samples_per_pulse = calculated.max(1);
     }
 
-    /// Call this once per audio sample. Returns true when a new tatum begins.
+    /// Call this once per audio sample. Returns true when a new pulse begins.
     pub fn tick(&mut self) -> bool {
-        let is_new_tatum = self.sample_counter % self.samples_per_tatum == 0;
+        let is_new_pulse = self.sample_counter % self.samples_per_pulse == 0;
         self.sample_counter = self.sample_counter.wrapping_add(1);
-        is_new_tatum
+        is_new_pulse
     }
 
     pub fn reset(&mut self) {
@@ -52,12 +50,12 @@ impl TatumClock {
 
 /// A sequencer that plays through a list of frequencies and durations
 pub struct TonalSequencer {
-    /// List of notes: (frequency_hz, duration_tatums, velocity)
+    /// List of notes: (frequency_hz, duration_pulses, velocity)
     sequence: Vec<(f32, u32, f32)>,
     /// Current position in the sequence
     current_index: usize,
     /// Tatums remaining for current note
-    tatums_remaining: u32,
+    pulses_remaining: u32,
     /// Current frequency being played
     current_frequency: f32,
     /// Current velocity being played
@@ -69,7 +67,7 @@ impl TonalSequencer {
         Self {
             sequence: Vec::new(),
             current_index: 0,
-            tatums_remaining: 0,
+            pulses_remaining: 0,
             current_frequency: 0.0,
             current_velocity: 0.0,
         }
@@ -78,12 +76,13 @@ impl TonalSequencer {
     /// Set a new sequence
     pub fn set_sequence(&mut self, sequence: Vec<(f32, u32, f32)>) {
         self.sequence = sequence;
-        self.reset();
+        // Ensure valid index
+        self.current_index = self.current_index.min(self.sequence.len());
     }
 
     /// Push a new note to the end of the sequence
-    pub fn push(&mut self, frequency: f32, duration_tatums: u32, velocity: f32) {
-        self.sequence.push((frequency, duration_tatums, velocity));
+    pub fn push(&mut self, frequency: f32, duration_pulses: u32, velocity: f32) {
+        self.sequence.push((frequency, duration_pulses, velocity));
     }
 
     /// Pop the last note from the sequence
@@ -93,16 +92,16 @@ impl TonalSequencer {
         // Adjust current index if needed
         if !self.sequence.is_empty() && self.current_index >= self.sequence.len() {
             self.current_index = 0;
-            self.tatums_remaining = 0;
+            self.pulses_remaining = 0;
         }
 
         result
     }
 
     /// Replace a note at the given index
-    pub fn replace(&mut self, index: usize, frequency: f32, duration_tatums: u32, velocity: f32) {
+    pub fn replace(&mut self, index: usize, frequency: f32, duration_pulses: u32, velocity: f32) {
         if index < self.sequence.len() {
-            self.sequence[index] = (frequency, duration_tatums, velocity);
+            self.sequence[index] = (frequency, duration_pulses, velocity);
         }
     }
 
@@ -116,7 +115,7 @@ impl TonalSequencer {
     /// Reset to the beginning of the sequence
     pub fn reset(&mut self) {
         self.current_index = 0;
-        self.tatums_remaining = 0;
+        self.pulses_remaining = 0;
         self.current_frequency = 0.0;
         self.current_velocity = 0.0;
     }
@@ -131,21 +130,21 @@ impl TonalSequencer {
         self.current_velocity
     }
 
-    /// Process a tatum event from the master clock
+    /// Process a pulse event from the ppqn clock
     /// Returns (should_trigger_note, frequency, velocity)
-    pub fn on_tatum(&mut self) -> (bool, f32, f32) {
+    pub fn on_pulse(&mut self) -> (bool, f32, f32) {
         if self.sequence.is_empty() {
             return (false, 0.0, 0.0);
         }
 
         // Check if we need to move to the next note
-        if self.tatums_remaining == 0 {
+        if self.pulses_remaining == 0 {
             // Get the next note in the sequence
-            if let Some(&(freq, duration_tatums, velocity)) = self.sequence.get(self.current_index)
+            if let Some(&(freq, duration_pulses, velocity)) = self.sequence.get(self.current_index)
             {
                 self.current_frequency = freq;
                 self.current_velocity = velocity;
-                self.tatums_remaining = duration_tatums;
+                self.pulses_remaining = duration_pulses;
 
                 // Move to next index for next time
                 self.current_index = (self.current_index + 1) % self.sequence.len();
@@ -154,9 +153,9 @@ impl TonalSequencer {
             }
         }
 
-        // Decrement tatum counter
-        if self.tatums_remaining > 0 {
-            self.tatums_remaining -= 1;
+        // Decrement pulse counter
+        if self.pulses_remaining > 0 {
+            self.pulses_remaining -= 1;
         }
 
         (false, self.current_frequency, self.current_velocity)
@@ -175,25 +174,25 @@ impl TonalSequencer {
 
         let position = position.clamp(0.0, 1.0);
 
-        // Calculate total duration in tatums
-        let total_tatums: u32 = self
+        // Calculate total duration in pulses
+        let total_pulses: u32 = self
             .sequence
             .iter()
-            .map(|(_, duration_tatums, _)| *duration_tatums)
+            .map(|(_, duration_pulses, _)| *duration_pulses)
             .sum();
-        let target_tatum = (position * total_tatums as f32) as u32;
+        let target_pulse = (position * total_pulses as f32) as u32;
 
         // Find which note we should be at
         let mut accumulated = 0u32;
-        for (index, &(freq, duration_tatums, velocity)) in self.sequence.iter().enumerate() {
-            if accumulated + duration_tatums > target_tatum {
+        for (index, &(freq, duration_pulses, velocity)) in self.sequence.iter().enumerate() {
+            if accumulated + duration_pulses > target_pulse {
                 self.current_index = index;
-                self.tatums_remaining = duration_tatums - (target_tatum - accumulated);
+                self.pulses_remaining = duration_pulses - (target_pulse - accumulated);
                 self.current_frequency = freq;
                 self.current_velocity = velocity;
                 return;
             }
-            accumulated += duration_tatums;
+            accumulated += duration_pulses;
         }
     }
 }
